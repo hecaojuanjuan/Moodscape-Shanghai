@@ -8,63 +8,54 @@
   </head>
   <body>
     <main class="app-shell">
-      <section class="intro">
-        <div>
-          <p class="eyebrow">情绪标签个性化旅游推荐</p>
-          <h1>Moodscape Shanghai</h1>
-          <p class="intro-copy">选择当下的心情，或写下你想要的城市体验，生成一条更贴近情绪的上海路线。</p>
-        </div>
+      <section class="hero" aria-labelledby="pageTitle">
+        <p class="eyebrow">AI 城市体验原型</p>
+        <h1 id="pageTitle">Moodscape Shanghai</h1>
+        <p class="hero-copy">把今天的心情交给上海，生成一条适合此刻节奏的城市路线。</p>
       </section>
 
-      <section class="workspace" aria-label="路线推荐工作区">
-        <div class="control-panel">
+      <section class="workspace" aria-label="情绪路线生成区">
+        <form class="control-panel" id="recommendForm">
           <div class="field-group">
             <h2>情绪标签</h2>
             <div class="tag-grid" id="tagGrid">
-              <button type="button" class="tag-button" data-tag="想一个人静静">想一个人静静</button>
-              <button type="button" class="tag-button" data-tag="想慢慢走不赶路">想慢慢走不赶路</button>
-              <button type="button" class="tag-button" data-tag="想被夜景治愈">想被夜景治愈</button>
-              <button type="button" class="tag-button" data-tag="想认识上海第一面">想认识上海第一面</button>
-              <button type="button" class="tag-button" data-tag="想体验未来城市">想体验未来城市</button>
-              <button type="button" class="tag-button" data-tag="想被城市震撼">想被城市震撼</button>
-              <button type="button" class="tag-button" data-tag="想和TA约会">想和TA约会</button>
-              <button type="button" class="tag-button" data-tag="想找回老上海">想找回老上海</button>
-              <button type="button" class="tag-button" data-tag="想看展充电">想看展充电</button>
-              <button type="button" class="tag-button" data-tag="想探索冷门角落">想探索冷门角落</button>
+              <button type="button" class="tag-button" data-tag="独处">独处</button>
+              <button type="button" class="tag-button" data-tag="治愈">治愈</button>
+              <button type="button" class="tag-button" data-tag="慢走">慢走</button>
+              <button type="button" class="tag-button" data-tag="低预算">低预算</button>
+              <button type="button" class="tag-button" data-tag="夜景">夜景</button>
+              <button type="button" class="tag-button" data-tag="拍照">拍照</button>
+              <button type="button" class="tag-button" data-tag="未来感">未来感</button>
+              <button type="button" class="tag-button" data-tag="约会">约会</button>
+              <button type="button" class="tag-button" data-tag="老上海">老上海</button>
+              <button type="button" class="tag-button" data-tag="小众">小众</button>
+              <button type="button" class="tag-button" data-tag="艺术">艺术</button>
+              <button type="button" class="tag-button" data-tag="展览">展览</button>
             </div>
           </div>
 
           <label class="field-group" for="userText">
             <span class="field-label">心情描述</span>
-            <textarea id="userText" rows="5" placeholder="例如：今天想一个人安静地走走，不赶路，也不想花太多钱。"></textarea>
+            <textarea id="userText" rows="5" placeholder="例如：我今天有点累，想一个人慢慢走"></textarea>
           </label>
 
-          <button type="button" class="primary-button" id="generateButton">生成推荐</button>
+          <button type="submit" class="primary-button" id="generateButton">生成路线剧本</button>
           <p class="status-text" id="statusText" aria-live="polite"></p>
-        </div>
+        </form>
 
-        <div class="result-panel">
+        <section class="result-panel" aria-labelledby="resultTitle">
           <div class="panel-header">
-            <h2>推荐结果</h2>
-            <span id="selectedTagsText">尚未选择标签</span>
+            <div>
+              <p class="eyebrow">推荐结果</p>
+              <h2 id="resultTitle">等待生成</h2>
+            </div>
+            <span id="selectedTagsText">未选择标签</span>
           </div>
-          <div class="results" id="results">
-            <p class="empty-state">选择标签或输入心情后，推荐路线会显示在这里。</p>
-          </div>
-        </div>
-      </section>
 
-      <section class="map-section" aria-label="地图预留区域">
-        <div class="map-placeholder">
-          <div class="map-line"></div>
-          <div class="map-pin pin-one"></div>
-          <div class="map-pin pin-two"></div>
-          <div class="map-pin pin-three"></div>
-          <div class="map-copy">
-            <h2>地图路线展示</h2>
-            <p>后续会在这里接入地图服务，展示路线点位和连线。</p>
+          <div class="results" id="results">
+            <p class="empty-state">输入心情或选择标签后，这里会展示最适合的一条上海路线。</p>
           </div>
-        </div>
+        </section>
       </section>
     </main>
 
