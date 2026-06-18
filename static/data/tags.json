@@ -1,0 +1,440 @@
+[
+  {
+    "tag_id": "E01",
+    "emotion_tag": "想一个人静静",
+    "user_button_text": "一个人静静",
+    "user_state": "不想被打扰，想把城市当成自己的背景音",
+    "experience_need": "低噪音、慢节奏、可独处、可停留",
+    "recommended_routes": [
+      "R03",
+      "R13",
+      "R14",
+      "R16",
+      "R20"
+    ],
+    "example_spots": [
+      "巴金故居",
+      "1984 Bookstore & Café",
+      "上海鲁迅纪念馆",
+      "建投书局·上海浦江店",
+      "徐汇滨江公共开放空间"
+    ],
+    "website_display_copy": "今天不赶路，只把上海慢慢走成自己的节奏。",
+    "ai_script_tone": "安静、内心独白、慢镜头",
+    "backend_scene_tags": [
+      "独处",
+      "阅读",
+      "城市漫步",
+      "滨江"
+    ]
+  },
+  {
+    "tag_id": "E02",
+    "emotion_tag": "想被夜景治愈",
+    "user_button_text": "夜景治愈",
+    "user_state": "白天累了，想被灯光、江风和城市轮廓安慰一下",
+    "experience_need": "夜景、开放空间、视觉冲击、情绪释放",
+    "recommended_routes": [
+      "R01",
+      "R02",
+      "R10",
+      "R15",
+      "R16"
+    ],
+    "example_spots": [
+      "外滩",
+      "东方明珠广播电视塔",
+      "上海中心大厦·上海之巅观光厅",
+      "陆家嘴滨江大道",
+      "外滩源"
+    ],
+    "website_display_copy": "把夜色交给上海，让灯光替你把今天收好。",
+    "ai_script_tone": "温柔、浪漫、电影旁白",
+    "backend_scene_tags": [
+      "夜游",
+      "滨江",
+      "建筑摄影",
+      "高空观景"
+    ]
+  },
+  {
+    "tag_id": "E03",
+    "emotion_tag": "想拍照发朋友圈",
+    "user_button_text": "拍照出片",
+    "user_state": "想要好看的照片和明确打卡点",
+    "experience_need": "高识别度、出片机位、社交分享价值",
+    "recommended_routes": [
+      "R01",
+      "R05",
+      "R11",
+      "R15",
+      "R20"
+    ],
+    "example_spots": [
+      "外滩",
+      "武康大楼",
+      "1933老场坊",
+      "安福路",
+      "浦东美术馆",
+      "西岸梦中心"
+    ],
+    "website_display_copy": "这条路线负责让你的相册看起来像一支城市短片。",
+    "ai_script_tone": "明亮、镜头感、节奏快",
+    "backend_scene_tags": [
+      "建筑摄影",
+      "艺术展览",
+      "滨江",
+      "街区"
+    ]
+  },
+  {
+    "tag_id": "E04",
+    "emotion_tag": "想和TA约会",
+    "user_button_text": "浪漫约会",
+    "user_state": "想要有氛围、有话题、有共同记忆的一天",
+    "experience_need": "可散步、可吃饭、可看展、可夜游",
+    "recommended_routes": [
+      "R04",
+      "R07",
+      "R11",
+      "R15",
+      "R19"
+    ],
+    "example_spots": [
+      "思南公馆",
+      "西岸美术馆",
+      "衡山和集",
+      "浦东美术馆",
+      "衡山路"
+    ],
+    "website_display_copy": "不用刻意浪漫，上海会把氛围慢慢递给你们。",
+    "ai_script_tone": "浪漫、轻松、双人互动",
+    "backend_scene_tags": [
+      "情侣",
+      "咖啡",
+      "书店",
+      "滨江",
+      "夜景"
+    ]
+  },
+  {
+    "tag_id": "E05",
+    "emotion_tag": "想带孩子涨见识",
+    "user_button_text": "亲子探索",
+    "user_state": "想带孩子玩，但不只是消耗体力",
+    "experience_need": "科普、互动、自然、城市认知",
+    "recommended_routes": [
+      "R06",
+      "R08",
+      "R17",
+      "R24",
+      "R25"
+    ],
+    "example_spots": [
+      "上海自然博物馆",
+      "上海天文馆",
+      "上海博物馆人民广场馆",
+      "上海玻璃博物馆",
+      "上海汽车博物馆"
+    ],
+    "website_display_copy": "把上海变成一间可以边玩边学的大教室。",
+    "ai_script_tone": "好奇、童趣、任务感",
+    "backend_scene_tags": [
+      "亲子",
+      "博物馆",
+      "科普",
+      "主题体验"
+    ]
+  },
+  {
+    "tag_id": "E06",
+    "emotion_tag": "想看展充电",
+    "user_button_text": "看展充电",
+    "user_state": "想获得审美刺激、知识输入或短暂精神恢复",
+    "experience_need": "展览密度、艺术空间、安静停留",
+    "recommended_routes": [
+      "R05",
+      "R07",
+      "R15",
+      "R20",
+      "R22"
+    ],
+    "example_spots": [
+      "Fotografiska影像艺术中心",
+      "西岸美术馆",
+      "浦东美术馆",
+      "星美术馆",
+      "喜玛拉雅美术馆"
+    ],
+    "website_display_copy": "用一场展，把今天从普通日子里轻轻拎出来。",
+    "ai_script_tone": "克制、艺术感、观察型",
+    "backend_scene_tags": [
+      "艺术展览",
+      "博物馆",
+      "摄影",
+      "公共文化"
+    ]
+  },
+  {
+    "tag_id": "E07",
+    "emotion_tag": "想逃离人群喘口气",
+    "user_button_text": "喘口气",
+    "user_state": "城市太满了，想找个开阔或相对安静的地方",
+    "experience_need": "滨江、公园、湖景、森林、节奏慢",
+    "recommended_routes": [
+      "R07",
+      "R09",
+      "R20",
+      "R23",
+      "R26"
+    ],
+    "example_spots": [
+      "滴水湖",
+      "徐汇滨江公共开放空间",
+      "共青森林公园",
+      "佘山国家森林公园",
+      "上海辰山植物园"
+    ],
+    "website_display_copy": "不是离开上海，而是在上海找到一口新鲜空气。",
+    "ai_script_tone": "舒缓、治愈、自然声",
+    "backend_scene_tags": [
+      "自然治愈",
+      "滨江",
+      "森林",
+      "公园"
+    ]
+  },
+  {
+    "tag_id": "E08",
+    "emotion_tag": "想找回老上海",
+    "user_button_text": "老上海感",
+    "user_state": "想看见上海更有历史肌理的一面",
+    "experience_need": "老建筑、石库门、弄堂、古镇、文学街区",
+    "recommended_routes": [
+      "R03",
+      "R04",
+      "R14",
+      "R16",
+      "R19"
+    ],
+    "example_spots": [
+      "武康大楼",
+      "思南公馆",
+      "多伦路文化名人街",
+      "外滩源",
+      "上海宋庆龄故居纪念馆"
+    ],
+    "website_display_copy": "走进旧砖、梧桐和老街，上海会慢慢说话。",
+    "ai_script_tone": "怀旧、细腻、生活感",
+    "backend_scene_tags": [
+      "文化历史",
+      "老建筑",
+      "城市漫步",
+      "名人故居"
+    ]
+  },
+  {
+    "tag_id": "E09",
+    "emotion_tag": "想体验未来城市",
+    "user_button_text": "未来感",
+    "user_state": "想看摩天楼、科技感、宇宙感和城市高度",
+    "experience_need": "高空、科技、天文、现代建筑、未来公共文化",
+    "recommended_routes": [
+      "R02",
+      "R08",
+      "R15",
+      "R22",
+      "R27"
+    ],
+    "example_spots": [
+      "上海中心大厦·上海之巅观光厅",
+      "上海天文馆",
+      "陆家嘴滨江大道",
+      "上海图书馆东馆",
+      "中国航海博物馆"
+    ],
+    "website_display_copy": "这一面的上海像一座提前到来的未来城市。",
+    "ai_script_tone": "科幻、开阔、震撼",
+    "backend_scene_tags": [
+      "高空观景",
+      "科技",
+      "建筑摄影",
+      "新城"
+    ]
+  },
+  {
+    "tag_id": "E10",
+    "emotion_tag": "想夜晚继续玩",
+    "user_button_text": "夜晚不回去",
+    "user_state": "晚上还有精力，不想太早结束行程",
+    "experience_need": "夜景、灯光、夜间文化空间、商业街、烟花",
+    "recommended_routes": [
+      "R01",
+      "R04",
+      "R05",
+      "R10",
+      "R15"
+    ],
+    "example_spots": [
+      "外滩",
+      "南京路步行街",
+      "思南书局",
+      "Fotografiska影像艺术中心",
+      "陆家嘴滨江大道"
+    ],
+    "website_display_copy": "夜晚不是行程结束，而是上海真正开场的时候。",
+    "ai_script_tone": "夜色、流动、都市感",
+    "backend_scene_tags": [
+      "夜游",
+      "餐饮",
+      "主题乐园",
+      "滨江"
+    ]
+  },
+  {
+    "tag_id": "E11",
+    "emotion_tag": "想边走边吃",
+    "user_button_text": "边走边吃",
+    "user_state": "想轻松逛吃，不想严肃看景点",
+    "experience_need": "小吃、咖啡、餐饮街区、随走随停",
+    "recommended_routes": [
+      "R01",
+      "R04",
+      "R09",
+      "R11",
+      "R18"
+    ],
+    "example_spots": [
+      "豫园",
+      "思南公馆",
+      "朱家角古镇",
+      "安福路",
+      "张园"
+    ],
+    "website_display_copy": "让路线不只被看见，也被一点点吃进记忆里。",
+    "ai_script_tone": "轻松、烟火气、生活化",
+    "backend_scene_tags": [
+      "美食",
+      "咖啡",
+      "商业街区",
+      "古镇"
+    ]
+  },
+  {
+    "tag_id": "E12",
+    "emotion_tag": "想低预算也有仪式感",
+    "user_button_text": "低预算仪式感",
+    "user_state": "预算有限，但不想体验廉价",
+    "experience_need": "免费公共空间、低价展馆、有记忆点动作",
+    "recommended_routes": [
+      "R03",
+      "R06",
+      "R14",
+      "R16",
+      "R17"
+    ],
+    "example_spots": [
+      "外滩",
+      "徐家汇书院",
+      "巴金故居",
+      "鲁迅公园",
+      "上海书城福州路店",
+      "人民公园"
+    ],
+    "website_display_copy": "不花很多钱，也能把一天过得像认真设计过。",
+    "ai_script_tone": "温暖、聪明、实用",
+    "backend_scene_tags": [
+      "低预算",
+      "公共空间",
+      "城市漫步",
+      "免费展馆"
+    ]
+  },
+  {
+    "tag_id": "E13",
+    "emotion_tag": "想进入童话/动漫世界",
+    "user_button_text": "童话/动漫感",
+    "user_state": "想要强IP、幻想感、角色感或超现实体验",
+    "experience_need": "主题乐园、海洋、宇宙、花海、奇幻建筑",
+    "recommended_routes": [
+      "R08",
+      "R10",
+      "R22",
+      "R24",
+      "R27"
+    ],
+    "example_spots": [
+      "上海迪士尼乐园",
+      "上海海昌海洋公园",
+      "上海天文馆",
+      "上海玻璃博物馆",
+      "上海鲜花港"
+    ],
+    "website_display_copy": "今天不做现实世界的大人，去当一天故事里的主角。",
+    "ai_script_tone": "梦幻、冒险、角色扮演",
+    "backend_scene_tags": [
+      "主题乐园",
+      "亲子",
+      "花海",
+      "奇幻空间"
+    ]
+  },
+  {
+    "tag_id": "E14",
+    "emotion_tag": "想慢慢走不赶路",
+    "user_button_text": "慢慢走",
+    "user_state": "不想打卡式旅游，想让路线自然发生",
+    "experience_need": "连续步行、停留空间、低压力动线",
+    "recommended_routes": [
+      "R03",
+      "R09",
+      "R11",
+      "R19",
+      "R23"
+    ],
+    "example_spots": [
+      "武康大楼",
+      "朱家角古镇",
+      "安福路",
+      "永嘉路",
+      "杨浦滨江公共空间（杨树浦电厂段）"
+    ],
+    "website_display_copy": "这不是赶景点，是把上海走成一段自己的时间。",
+    "ai_script_tone": "松弛、慢节奏、散文感",
+    "backend_scene_tags": [
+      "城市漫步",
+      "滨江",
+      "古镇",
+      "街区"
+    ]
+  },
+  {
+    "tag_id": "E15",
+    "emotion_tag": "想探索冷门角落",
+    "user_button_text": "冷门探索",
+    "user_state": "不想走最游客的路线，想发现有点特别的空间",
+    "experience_need": "工业建筑、艺术园区、非主流景点、故事感",
+    "recommended_routes": [
+      "R05",
+      "R13",
+      "R21",
+      "R24",
+      "R26"
+    ],
+    "example_spots": [
+      "M50创意园",
+      "OPS Café",
+      "上海纺织博物馆",
+      "半岛1919文创园",
+      "上海天文博物馆"
+    ],
+    "website_display_copy": "换一条不那么标准的路，上海会露出另一张脸。",
+    "ai_script_tone": "悬疑、探索、城市支线",
+    "backend_scene_tags": [
+      "工业风",
+      "艺术展览",
+      "冷门博物馆",
+      "远郊"
+    ]
+  }
+]

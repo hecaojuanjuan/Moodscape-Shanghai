@@ -18,19 +18,8 @@
         <form class="control-panel" id="recommendForm">
           <div class="field-group">
             <h2>情绪标签</h2>
-            <div class="tag-grid" id="tagGrid">
-              <button type="button" class="tag-button" data-tag="独处">独处</button>
-              <button type="button" class="tag-button" data-tag="治愈">治愈</button>
-              <button type="button" class="tag-button" data-tag="慢走">慢走</button>
-              <button type="button" class="tag-button" data-tag="低预算">低预算</button>
-              <button type="button" class="tag-button" data-tag="夜景">夜景</button>
-              <button type="button" class="tag-button" data-tag="拍照">拍照</button>
-              <button type="button" class="tag-button" data-tag="未来感">未来感</button>
-              <button type="button" class="tag-button" data-tag="约会">约会</button>
-              <button type="button" class="tag-button" data-tag="老上海">老上海</button>
-              <button type="button" class="tag-button" data-tag="小众">小众</button>
-              <button type="button" class="tag-button" data-tag="艺术">艺术</button>
-              <button type="button" class="tag-button" data-tag="展览">展览</button>
+            <div class="tag-grid" id="tagGrid" aria-live="polite">
+              <p class="empty-state">正在读取 Excel 情绪标签...</p>
             </div>
           </div>
 

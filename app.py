@@ -40,7 +40,7 @@ def _read_recommendation_payload(payload):
     if not isinstance(user_text, str):
         user_text = ""
 
-    selected_tags = [tag for tag in selected_tags if isinstance(tag, str)]
+    selected_tags = [tag.strip() for tag in selected_tags if isinstance(tag, str) and tag.strip()]
     return selected_tags, user_text.strip()
 
 
@@ -50,15 +50,16 @@ def generate_mock_script(route, user_text=""):
 
     spots = route.get("spots", [])
     spot_names = "、".join(spot.get("name", "") for spot in spots if spot.get("name"))
-    mood_line = f"你刚才写下的心情是：{user_text}。" if user_text else "即使没有输入心情，也可以先把脚步交给城市。"
-
     first_spot = spots[0]["name"] if spots else "第一站"
     last_spot = spots[-1]["name"] if spots else "终点"
+    mood_line = f"你刚才写下的心情是：{user_text}。" if user_text else "即使没有输入心情，也可以先把脚步交给城市。"
+    angle = route.get("ai_script_angle") or "城市漫步、情绪陪伴、慢旅行"
 
     return (
         f"这里是模拟生成的 AI 城市旅游剧本：今天为你选择的是「{route.get('route_name', '上海情绪路线')}」。"
         f"{mood_line}"
-        f"这条路线会从{first_spot}开始，把节奏放慢，再一路经过{spot_names}。"
+        f"这条路线的叙事角度是「{angle}」。"
+        f"你会从{first_spot}开始，一路经过{spot_names}。"
         f"推荐理由是：{route.get('reason', '这条路线适合此刻的你。')}"
         f"走到{last_spot}时，可以停下来拍一张照片，或者给自己留一句今天的城市旁白。"
     )

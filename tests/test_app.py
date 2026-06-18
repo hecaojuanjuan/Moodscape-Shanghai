@@ -2,14 +2,14 @@ import unittest
 
 
 class AppTest(unittest.TestCase):
-    def test_generate_script_endpoint_returns_route_and_mock_script(self):
+    def test_generate_script_endpoint_returns_excel_route_and_mock_script(self):
         from app import app
 
         client = app.test_client()
         response = client.post(
             "/api/generate-script",
             json={
-                "selected_tags": ["独处", "治愈"],
+                "selected_tags": ["想一个人静静"],
                 "user_text": "我今天有点累，想一个人慢慢走",
             },
         )
@@ -18,19 +18,32 @@ class AppTest(unittest.TestCase):
         data = response.get_json()
         self.assertIn("route", data)
         self.assertIn("script", data)
-        self.assertIn("安静城市漫步路线", data["script"])
 
         route = data["route"]
-        self.assertEqual(route["route_id"], "route_001")
-        self.assertGreater(route["score"], 0)
-        self.assertIn("matched_tags", route)
-        self.assertGreaterEqual(len(route["spots"]), 1)
+        self.assertEqual(route["route_id"], "R03")
+        self.assertEqual(route["route_name"], "武康路书香独处线")
+        self.assertIn("想一个人静静", route["matched_tags"])
+        self.assertIn("武康路书香独处线", data["script"])
+        self.assertGreaterEqual(len(route["spots"]), 3)
 
         for spot in route["spots"]:
             self.assertIn("name", spot)
             self.assertIn("description", spot)
             self.assertIn("lat", spot)
             self.assertIn("lng", spot)
+
+    def test_static_tags_json_is_available_to_frontend(self):
+        from app import app
+
+        client = app.test_client()
+        response = client.get("/static/data/tags.json")
+
+        self.assertEqual(response.status_code, 200)
+        tags = response.get_json()
+        response.close()
+        self.assertEqual(len(tags), 15)
+        self.assertEqual(tags[0]["emotion_tag"], "想一个人静静")
+        self.assertEqual(tags[0]["user_button_text"], "一个人静静")
 
     def test_recommend_routes_endpoint_remains_available(self):
         from app import app
@@ -39,15 +52,15 @@ class AppTest(unittest.TestCase):
         response = client.post(
             "/api/recommend-routes",
             json={
-                "selected_tags": ["独处"],
-                "user_text": "想一个人安静散步",
+                "selected_tags": ["想被夜景治愈"],
+                "user_text": "",
             },
         )
 
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertIn("routes", data)
-        self.assertEqual(data["routes"][0]["route_id"], "route_001")
+        self.assertEqual(data["routes"][0]["route_id"], "R01")
 
 
 if __name__ == "__main__":

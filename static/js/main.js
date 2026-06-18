@@ -1,4 +1,3 @@
-const tagButtons = Array.from(document.querySelectorAll(".tag-button"));
 const recommendForm = document.querySelector("#recommendForm");
 const generateButton = document.querySelector("#generateButton");
 const userText = document.querySelector("#userText");
@@ -6,26 +5,12 @@ const results = document.querySelector("#results");
 const statusText = document.querySelector("#statusText");
 const selectedTagsText = document.querySelector("#selectedTagsText");
 const resultTitle = document.querySelector("#resultTitle");
+const tagGrid = document.querySelector("#tagGrid");
 
 const selectedTags = new Set();
+const selectedTagLabels = new Map();
 
-tagButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    const tag = button.dataset.tag;
-
-    if (selectedTags.has(tag)) {
-      selectedTags.delete(tag);
-      button.classList.remove("is-selected");
-      button.setAttribute("aria-pressed", "false");
-    } else {
-      selectedTags.add(tag);
-      button.classList.add("is-selected");
-      button.setAttribute("aria-pressed", "true");
-    }
-
-    updateSelectedTagsText();
-  });
-});
+loadEmotionTags();
 
 recommendForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -61,13 +46,71 @@ recommendForm.addEventListener("submit", async (event) => {
   }
 });
 
+async function loadEmotionTags() {
+  try {
+    const response = await fetch("/static/data/tags.json");
+    if (!response.ok) {
+      throw new Error("标签数据加载失败。");
+    }
+
+    const tags = await response.json();
+    renderTagButtons(tags);
+  } catch (error) {
+    tagGrid.innerHTML = `<p class="empty-state">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+function renderTagButtons(tags) {
+  tagGrid.innerHTML = tags
+    .map(
+      (tag) => `
+        <button
+          type="button"
+          class="tag-button"
+          data-tag="${escapeHtml(tag.emotion_tag)}"
+          data-label="${escapeHtml(tag.user_button_text)}"
+          title="${escapeHtml(tag.website_display_copy)}"
+          aria-pressed="false"
+        >
+          ${escapeHtml(tag.user_button_text)}
+        </button>
+      `,
+    )
+    .join("");
+
+  tagGrid.querySelectorAll(".tag-button").forEach((button) => {
+    button.addEventListener("click", () => toggleTag(button));
+  });
+}
+
+function toggleTag(button) {
+  const tag = button.dataset.tag;
+  const label = button.dataset.label || tag;
+
+  if (selectedTags.has(tag)) {
+    selectedTags.delete(tag);
+    selectedTagLabels.delete(tag);
+    button.classList.remove("is-selected");
+    button.setAttribute("aria-pressed", "false");
+  } else {
+    selectedTags.add(tag);
+    selectedTagLabels.set(tag, label);
+    button.classList.add("is-selected");
+    button.setAttribute("aria-pressed", "true");
+  }
+
+  updateSelectedTagsText();
+}
+
 function updateSelectedTagsText() {
   if (selectedTags.size === 0) {
     selectedTagsText.textContent = "未选择标签";
     return;
   }
 
-  selectedTagsText.textContent = Array.from(selectedTags).join(" / ");
+  selectedTagsText.textContent = Array.from(selectedTags)
+    .map((tag) => selectedTagLabels.get(tag) || tag)
+    .join(" / ");
 }
 
 function renderRecommendation(route, script) {
