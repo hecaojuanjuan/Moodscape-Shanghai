@@ -50,6 +50,16 @@ class RecommenderTest(unittest.TestCase):
             self.assertIn("match_reason", route)
             self.assertIn("suggested_card_copy", route)
 
+    def test_match_percent_uses_fixed_scale_instead_of_current_top_route(self):
+        data = load_excel_data()
+        top_percents = [
+            recommend_routes(selected_tags=[tag["emotion_tag"]], user_text="")[0]["match_percent"]
+            for tag in data["tags"][:5]
+        ]
+
+        self.assertNotIn(96, top_percents)
+        self.assertGreater(len(set(top_percents)), 1)
+
     def test_selected_excel_tag_uses_mapping_priority_and_reasons(self):
         routes = recommend_routes(selected_tags=["想一个人静静"], user_text="")
 

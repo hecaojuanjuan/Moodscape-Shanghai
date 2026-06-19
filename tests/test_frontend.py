@@ -22,6 +22,11 @@ class FrontendTest(unittest.TestCase):
         self.assertIn("toggleRouteDetail", script)
         self.assertIn("route-option", script)
         self.assertIn("is-expanded", script)
+        self.assertIn("let expandedRouteIndex = null", script)
+        self.assertNotIn("expandedRouteIndex = 0", script)
+        self.assertIn("route-close-button", script)
+        self.assertIn("closeRouteDetail", script)
+        self.assertIn("expandedRouteIndex === index ? null : index", script)
 
     def test_runtime_code_does_not_hardcode_travel_data_sources(self):
         recommender = (PROJECT_ROOT / "services" / "recommender.py").read_text(encoding="utf-8")

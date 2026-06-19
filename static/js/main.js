@@ -11,7 +11,7 @@ const mindsetGrid = document.querySelector("#mindsetGrid");
 const selectedTags = new Set();
 const selectedTagLabels = new Map();
 let currentRoutes = [];
-let expandedRouteIndex = 0;
+let expandedRouteIndex = null;
 
 loadTags();
 
@@ -39,7 +39,7 @@ recommendForm.addEventListener("submit", async (event) => {
 
     const data = await response.json();
     currentRoutes = data.routes || [];
-    expandedRouteIndex = 0;
+    expandedRouteIndex = null;
     renderRouteOptions(currentRoutes);
     statusText.textContent = "已生成候选路线。";
   } catch (error) {
@@ -157,6 +157,10 @@ function renderRouteOptions(routes) {
   results.querySelectorAll(".route-option").forEach((button) => {
     button.addEventListener("click", () => toggleRouteDetail(Number(button.dataset.index)));
   });
+
+  results.querySelectorAll(".route-close-button").forEach((button) => {
+    button.addEventListener("click", closeRouteDetail);
+  });
 }
 
 function renderRouteOption(route, index, isExpanded) {
@@ -180,17 +184,23 @@ function renderRouteOption(route, index, isExpanded) {
       <div class="matched-tags" aria-label="匹配标签">
         ${labelsHtml}
       </div>
-      ${isExpanded ? renderRouteDetail(route) : ""}
+      ${isExpanded ? renderRouteDetail(route, index) : ""}
     </article>
   `;
 }
 
 function toggleRouteDetail(index) {
-  expandedRouteIndex = index;
+  expandedRouteIndex = expandedRouteIndex === index ? null : index;
   renderRouteOptions(currentRoutes);
 }
 
-function renderRouteDetail(route) {
+function closeRouteDetail(event) {
+  event.stopPropagation();
+  expandedRouteIndex = null;
+  renderRouteOptions(currentRoutes);
+}
+
+function renderRouteDetail(route, index) {
   const spotsHtml = (route.spots || [])
     .map(
       (spot, index) => `
@@ -208,31 +218,43 @@ function renderRouteDetail(route) {
     .join("");
 
   return `
-    <section class="route-section">
-      <h3>推荐理由</h3>
-      <p>${escapeHtml(route.match_reason)}</p>
-    </section>
+    <div class="route-detail">
+      <button
+        class="route-close-button"
+        type="button"
+        data-index="${index}"
+        aria-label="关闭路线详情"
+        title="关闭路线详情"
+      >
+        ×
+      </button>
 
-    <section class="route-section">
-      <h3>点位列表</h3>
-      <ol class="spot-list">${spotsHtml}</ol>
-    </section>
+      <section class="route-section">
+        <h3>推荐理由</h3>
+        <p>${escapeHtml(route.match_reason)}</p>
+      </section>
 
-    <section class="route-section script-box">
-      <h3>Mock AI 旅游剧本</h3>
-      <p>${escapeHtml(route.script)}</p>
-    </section>
+      <section class="route-section">
+        <h3>点位列表</h3>
+        <ol class="spot-list">${spotsHtml}</ol>
+      </section>
 
-    <section class="map-placeholder" aria-label="地图预留区域">
-      <div class="map-grid"></div>
-      <div class="map-line"></div>
-      <div class="map-pin pin-one"></div>
-      <div class="map-pin pin-two"></div>
-      <div class="map-pin pin-three"></div>
-      <div class="map-copy">
-        <h3>地图预留区域</h3>
-      </div>
-    </section>
+      <section class="route-section script-box">
+        <h3>Mock AI 旅游剧本</h3>
+        <p>${escapeHtml(route.script)}</p>
+      </section>
+
+      <section class="map-placeholder" aria-label="地图预留区域">
+        <div class="map-grid"></div>
+        <div class="map-line"></div>
+        <div class="map-pin pin-one"></div>
+        <div class="map-pin pin-two"></div>
+        <div class="map-pin pin-three"></div>
+        <div class="map-copy">
+          <h3>地图预留区域</h3>
+        </div>
+      </section>
+    </div>
   `;
 }
 

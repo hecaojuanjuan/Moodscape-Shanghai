@@ -4,6 +4,22 @@ import re
 from services.excel_data import load_excel_data
 
 
+SELECTED_MAPPING_BASE = 500
+TEXT_MAPPING_BASE = 320
+SELECTED_PRIORITY_STEP = 40
+TEXT_PRIORITY_STEP = 26
+SELECTED_PRIMARY_TAG_BONUS = 45
+SELECTED_SECONDARY_TAG_BONUS = 26
+TEXT_PRIMARY_TAG_BONUS = 28
+TEXT_SECONDARY_TAG_BONUS = 16
+BEST_MAPPING_PRIORITY = 1
+MINDSET_MAX_SCORE = 100
+SELECTED_MINDSET_WEIGHT = 1.15
+TEXT_MINDSET_WEIGHT = 0.65
+TOKEN_MATCH_SCORE = 4
+MATCH_PERCENT_CAP = 98
+
+
 def load_routes():
     return copy.deepcopy(load_excel_data()["routes"])
 
@@ -29,6 +45,13 @@ def recommend_routes(selected_tags=None, user_text="", limit=3):
     selected_experience_tags, selected_mindsets = _split_selected_tags(selected, data)
     text_matched_tags = _match_tags_from_text(user_text, data)
     text_matched_mindsets = _match_mindsets_from_text(user_text, text_matched_tags, data)
+    possible_score = _query_possible_score(
+        selected_experience_tags,
+        selected_mindsets,
+        text_matched_tags,
+        text_matched_mindsets,
+        user_text,
+    )
 
     scored = []
     for index, route in enumerate(data["routes"]):
@@ -44,6 +67,7 @@ def recommend_routes(selected_tags=None, user_text="", limit=3):
         scored.append(
             {
                 "raw_score": raw_score,
+                "match_percent": _match_percent(raw_score, possible_score),
                 "index": index,
                 "route": route,
                 "matched_tags": matched_tags,
@@ -53,9 +77,9 @@ def recommend_routes(selected_tags=None, user_text="", limit=3):
             }
         )
 
-    scored.sort(key=lambda item: (-item["raw_score"], item["index"]))
+    scored.sort(key=lambda item: (-item["match_percent"], -item["raw_score"], item["index"]))
     candidates = scored[: max(1, limit)]
-    return _format_candidates(candidates)
+    return _format_candidates(candidates, possible_score)
 
 
 def _normalize_selected_tags(selected_tags):
@@ -179,7 +203,7 @@ def _score_route(route, selected_tags, selected_mindsets, text_tags, text_mindse
     route_text = _route_search_text(route)
     for token in _input_tokens(user_text):
         if token in route_text:
-            score += 4
+            score += TOKEN_MATCH_SCORE
 
     reason = next((reason for reason in reasons if reason), "") or route["route_intro_user_facing"] or route["suitable_mood"] or route["ai_script_angle"]
     card_copy = next((copy_text for copy_text in card_copies if copy_text), "") or route["route_intro_user_facing"]
@@ -191,11 +215,13 @@ def _experience_tag_score(route, tag, mapping_by_pair, selected):
     score = 0.0
     if mapping:
         priority = mapping["priority"] or 9
-        score += (500 if selected else 320) - priority * (40 if selected else 26)
+        base = SELECTED_MAPPING_BASE if selected else TEXT_MAPPING_BASE
+        step = SELECTED_PRIORITY_STEP if selected else TEXT_PRIORITY_STEP
+        score += base - priority * step
     if tag in route["primary_emotion_tags"]:
-        score += 45 if selected else 28
+        score += SELECTED_PRIMARY_TAG_BONUS if selected else TEXT_PRIMARY_TAG_BONUS
     if tag in route["secondary_emotion_tags"]:
-        score += 26 if selected else 16
+        score += SELECTED_SECONDARY_TAG_BONUS if selected else TEXT_SECONDARY_TAG_BONUS
     return max(score, 0), mapping
 
 
@@ -203,17 +229,47 @@ def _mindset_score(route, mindset, selected):
     value = route["mindset_scores"].get(mindset, 0)
     if not value:
         return 0
-    return value * (1.15 if selected else 0.65)
+    return value * (SELECTED_MINDSET_WEIGHT if selected else TEXT_MINDSET_WEIGHT)
 
 
-def _format_candidates(candidates):
-    max_score = max((item["raw_score"] for item in candidates), default=0)
+def _query_possible_score(selected_tags, selected_mindsets, text_tags, text_mindsets, user_text):
+    score = 0.0
+    for _ in selected_tags:
+        score += _experience_tag_possible_score(selected=True)
+    for _ in text_tags:
+        score += _experience_tag_possible_score(selected=False)
+    for _ in selected_mindsets:
+        score += MINDSET_MAX_SCORE * SELECTED_MINDSET_WEIGHT
+    for _ in text_mindsets:
+        score += MINDSET_MAX_SCORE * TEXT_MINDSET_WEIGHT
+    score += len(_input_tokens(user_text)) * TOKEN_MATCH_SCORE
+    return score
+
+
+def _experience_tag_possible_score(selected):
+    if selected:
+        return (
+            SELECTED_MAPPING_BASE
+            - BEST_MAPPING_PRIORITY * SELECTED_PRIORITY_STEP
+            + SELECTED_PRIMARY_TAG_BONUS
+            + SELECTED_SECONDARY_TAG_BONUS
+        )
+    return (
+        TEXT_MAPPING_BASE
+        - BEST_MAPPING_PRIORITY * TEXT_PRIORITY_STEP
+        + TEXT_PRIMARY_TAG_BONUS
+        + TEXT_SECONDARY_TAG_BONUS
+    )
+
+
+def _format_candidates(candidates, possible_score):
     formatted = []
-    for rank, item in enumerate(candidates):
+    for item in candidates:
         route = copy.deepcopy(item["route"])
         route["raw_score"] = round(item["raw_score"], 2)
+        route["possible_score"] = round(possible_score, 2)
         route["score"] = route["raw_score"]
-        route["match_percent"] = _match_percent(item["raw_score"], max_score, rank)
+        route["match_percent"] = item["match_percent"]
         route["matched_tags"] = item["matched_tags"]
         route["matched_mindsets"] = item["matched_mindsets"]
         route["match_reason"] = item["match_reason"]
@@ -222,11 +278,11 @@ def _format_candidates(candidates):
     return formatted
 
 
-def _match_percent(score, max_score, rank):
-    if max_score <= 0:
-        return max(35, 47 - rank * 4)
-    percent = 42 + (score / max_score) * 54 - rank * 1.5
-    return round(max(35, min(96, percent)), 1)
+def _match_percent(score, possible_score):
+    if possible_score <= 0:
+        return 0
+    percent = score / possible_score * 100
+    return round(max(0, min(MATCH_PERCENT_CAP, percent)), 1)
 
 
 def _route_search_text(route):
