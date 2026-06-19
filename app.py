@@ -19,7 +19,16 @@ def generate_script_api():
     route = recommend_route(selected_tags=selected_tags, user_text=user_text)
     script = generate_mock_script(route, user_text)
 
-    return jsonify({"route": route, "script": script})
+    return jsonify(
+        {
+            "route": route,
+            "script": script,
+            "matched_tags": route.get("matched_tags", []) if route else [],
+            "matched_mindsets": route.get("matched_mindsets", []) if route else [],
+            "recommendation_reason": route.get("reason", "") if route else "",
+            "spots": route.get("spots", []) if route else [],
+        }
+    )
 
 
 @app.post("/api/recommend-routes")
@@ -56,7 +65,7 @@ def generate_mock_script(route, user_text=""):
     angle = route.get("ai_script_angle") or "城市漫步、情绪陪伴、慢旅行"
 
     return (
-        f"这里是模拟生成的 AI 城市旅游剧本：今天为你选择的是「{route.get('route_name', '上海情绪路线')}」。"
+        f"这里是 Mock AI 旅游剧本：今天为你选择的是「{route.get('route_name', '上海情绪路线')}」。"
         f"{mood_line}"
         f"这条路线的叙事角度是「{angle}」。"
         f"你会从{first_spot}开始，一路经过{spot_names}。"

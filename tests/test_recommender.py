@@ -5,6 +5,8 @@ from services.recommender import load_routes, load_tags, recommend_route, recomm
 
 
 class RecommenderTest(unittest.TestCase):
+    MINDSET_LABELS = {"独处", "疗愈", "灵感", "怀旧", "成长", "浪漫", "探索", "社交"}
+
     def test_selected_excel_tag_recommends_priority_route(self):
         route = recommend_route(selected_tags=["想一个人静静"], user_text="")
 
@@ -45,6 +47,27 @@ class RecommenderTest(unittest.TestCase):
         self.assertEqual(len(routes), 1)
         self.assertEqual(routes[0]["route_id"], "R03")
 
+    def test_selected_mindset_tag_uses_excel_percent_scores(self):
+        route = recommend_route(selected_tags=["疗愈"], user_text="")
+
+        self.assertEqual(route["route_id"], "R26")
+        self.assertEqual(route["route_name"], "松江郊野文化疗愈线")
+        self.assertIn("疗愈", route["matched_mindsets"])
+        self.assertGreater(route["mindset_scores"]["疗愈"], 60)
+
+    def test_user_text_matches_mindset_keywords(self):
+        route = recommend_route(selected_tags=[], user_text="我今天很累，想放松一下")
+
+        self.assertEqual(route["route_id"], "R26")
+        self.assertIn("疗愈", route["matched_mindsets"])
+
+    def test_user_text_combines_experience_and_mindset_keywords(self):
+        route = recommend_route(selected_tags=[], user_text="想一个人安静地慢慢走，不赶路")
+
+        self.assertEqual(route["route_id"], "R03")
+        self.assertIn("想慢慢走不赶路", route["matched_tags"])
+        self.assertIn("独处", route["matched_mindsets"])
+
     def test_static_data_uses_excel_tag_and_route_counts(self):
         tags = load_tags()
         routes = load_routes()
@@ -63,6 +86,19 @@ class RecommenderTest(unittest.TestCase):
 
         tag_payload = json.dumps(tags, ensure_ascii=False)
         self.assertIn("想进入童话/动漫世界", tag_payload)
+
+        for route in routes:
+            self.assertEqual(set(route["mindset_scores"]), self.MINDSET_LABELS)
+            self.assertEqual(len(route["dominant_mindsets"]), 3)
+            for label, score in route["mindset_scores"].items():
+                self.assertIn(label, self.MINDSET_LABELS)
+                self.assertIsInstance(score, (int, float))
+
+            for spot in route["spots"]:
+                self.assertEqual(set(spot["mindset_scores"]), self.MINDSET_LABELS)
+                for label, score in spot["mindset_scores"].items():
+                    self.assertIn(label, self.MINDSET_LABELS)
+                    self.assertIsInstance(score, int)
 
 
 if __name__ == "__main__":

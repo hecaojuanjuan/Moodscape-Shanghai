@@ -18,11 +18,18 @@ class AppTest(unittest.TestCase):
         data = response.get_json()
         self.assertIn("route", data)
         self.assertIn("script", data)
+        self.assertIn("matched_tags", data)
+        self.assertIn("matched_mindsets", data)
+        self.assertIn("recommendation_reason", data)
+        self.assertIn("spots", data)
 
         route = data["route"]
         self.assertEqual(route["route_id"], "R03")
         self.assertEqual(route["route_name"], "武康路书香独处线")
         self.assertIn("想一个人静静", route["matched_tags"])
+        self.assertIn("独处", data["matched_mindsets"])
+        self.assertEqual(data["spots"], route["spots"])
+        self.assertEqual(data["recommendation_reason"], route["reason"])
         self.assertIn("武康路书香独处线", data["script"])
         self.assertGreaterEqual(len(route["spots"]), 3)
 
@@ -31,6 +38,27 @@ class AppTest(unittest.TestCase):
             self.assertIn("description", spot)
             self.assertIn("lat", spot)
             self.assertIn("lng", spot)
+
+    def test_generate_script_endpoint_accepts_mindset_tag(self):
+        from app import app
+
+        client = app.test_client()
+        response = client.post(
+            "/api/generate-script",
+            json={
+                "selected_tags": ["疗愈"],
+                "user_text": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        route = data["route"]
+
+        self.assertEqual(route["route_id"], "R26")
+        self.assertIn("疗愈", data["matched_mindsets"])
+        self.assertEqual(data["spots"], route["spots"])
+        self.assertIn("Mock AI", data["script"])
 
     def test_static_tags_json_is_available_to_frontend(self):
         from app import app

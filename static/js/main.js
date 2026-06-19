@@ -6,11 +6,24 @@ const statusText = document.querySelector("#statusText");
 const selectedTagsText = document.querySelector("#selectedTagsText");
 const resultTitle = document.querySelector("#resultTitle");
 const tagGrid = document.querySelector("#tagGrid");
+const mindsetGrid = document.querySelector("#mindsetGrid");
+
+const mindsetTags = [
+  { tag: "独处", label: "独处", copy: "适合一个人安静停留，把城市走成自己的背景音。" },
+  { tag: "疗愈", label: "疗愈", copy: "适合累了、想放松、想恢复一点能量的时刻。" },
+  { tag: "灵感", label: "灵感", copy: "适合看展、观察街区、重新打开感受力。" },
+  { tag: "怀旧", label: "怀旧", copy: "适合老建筑、文学街区和旧时光的城市线索。" },
+  { tag: "成长", label: "成长", copy: "适合学习、涨见识和带着问题探索城市。" },
+  { tag: "浪漫", label: "浪漫", copy: "适合约会、江风、展厅和有氛围的慢步行。" },
+  { tag: "探索", label: "探索", copy: "适合冷门角落、城市支线和非标准路线。" },
+  { tag: "社交", label: "社交", copy: "适合朋友同行、逛吃聊天和热闹街区。" },
+];
 
 const selectedTags = new Set();
 const selectedTagLabels = new Map();
 
 loadEmotionTags();
+renderMindsetButtons();
 
 recommendForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -35,7 +48,7 @@ recommendForm.addEventListener("submit", async (event) => {
     }
 
     const data = await response.json();
-    renderRecommendation(data.route, data.script);
+    renderRecommendation(data.route, data.script, data);
     statusText.textContent = "已生成一条适合当前心情的路线。";
   } catch (error) {
     resultTitle.textContent = "生成失败";
@@ -83,6 +96,29 @@ function renderTagButtons(tags) {
   });
 }
 
+function renderMindsetButtons() {
+  mindsetGrid.innerHTML = mindsetTags
+    .map(
+      (tag) => `
+        <button
+          type="button"
+          class="tag-button mindset-button"
+          data-tag="${escapeHtml(tag.tag)}"
+          data-label="${escapeHtml(tag.label)}"
+          title="${escapeHtml(tag.copy)}"
+          aria-pressed="false"
+        >
+          ${escapeHtml(tag.label)}
+        </button>
+      `,
+    )
+    .join("");
+
+  mindsetGrid.querySelectorAll(".tag-button").forEach((button) => {
+    button.addEventListener("click", () => toggleTag(button));
+  });
+}
+
 function toggleTag(button) {
   const tag = button.dataset.tag;
   const label = button.dataset.label || tag;
@@ -113,7 +149,7 @@ function updateSelectedTagsText() {
     .join(" / ");
 }
 
-function renderRecommendation(route, script) {
+function renderRecommendation(route, script, payload = {}) {
   if (!route) {
     resultTitle.textContent = "暂无路线";
     results.innerHTML = '<p class="empty-state">暂时没有可展示的路线。</p>';
@@ -122,12 +158,17 @@ function renderRecommendation(route, script) {
 
   resultTitle.textContent = route.route_name || "推荐路线";
 
-  const matchedTags = route.matched_tags || [];
-  const matchedTagsHtml = matchedTags.length
-    ? matchedTags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")
+  const matchedTags = payload.matched_tags || route.matched_tags || [];
+  const matchedMindsets = payload.matched_mindsets || route.matched_mindsets || [];
+  const matchedLabels = [...matchedTags, ...matchedMindsets];
+  const matchedTagsHtml = matchedLabels.length
+    ? matchedLabels.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")
     : "<span>默认推荐</span>";
 
-  const spotsHtml = (route.spots || [])
+  const spots = payload.spots || route.spots || [];
+  const reason = payload.recommendation_reason || route.reason || "这条路线适合此刻的你。";
+
+  const spotsHtml = spots
     .map(
       (spot, index) => `
         <li class="spot-item">
@@ -156,7 +197,7 @@ function renderRecommendation(route, script) {
 
       <section class="route-section">
         <h3>推荐理由</h3>
-        <p>${escapeHtml(route.reason)}</p>
+        <p>${escapeHtml(reason)}</p>
       </section>
 
       <section class="route-section">
