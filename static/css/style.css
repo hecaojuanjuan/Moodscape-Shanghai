@@ -238,6 +238,48 @@ textarea:focus,
   gap: 18px;
 }
 
+.route-option {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--text);
+  padding: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.route-option strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.route-option p {
+  margin-bottom: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.route-option > span {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #ffffff;
+  padding: 6px 10px;
+  font-weight: 700;
+}
+
+.route-card.is-expanded .route-option {
+  border-color: var(--accent);
+  background: #f3fbf8;
+}
+
 .route-topline,
 .matched-tags {
   display: flex;
@@ -311,6 +353,7 @@ textarea:focus,
 }
 
 .spot-item span {
+  display: block;
   color: var(--muted);
   font-size: 0.9rem;
 }

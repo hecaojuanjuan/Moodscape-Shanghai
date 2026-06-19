@@ -2,15 +2,17 @@
 
 Moodscape Shanghai 是一个基于情绪标签的上海个性化旅游推荐网站原型。
 
-当前版本是最小可运行 Flask MVP：用户可以选择情绪标签、输入心情描述，系统会从本地 JSON 路线数据中推荐适合的上海路线。此版本不接真实大模型 API，不接地图 API，也不引入复杂前端框架。
+当前版本是最小可运行 Flask MVP：用户可以选择体验标签/心境标签、输入心情描述，系统会从本地 Excel 数据库 `上海路线数据.xlsx` 中推荐 2-3 条上海路线。此版本不接真实大模型 API，不接地图 API，也不引入复杂前端框架。
 
 ## 当前功能
 
 - Flask 首页：`GET /`
+- 标签接口：`GET /api/tags`
+- 剧本和候选路线接口：`POST /api/generate-script`
 - 路线推荐接口：`POST /api/recommend-routes`
 - 原生 HTML/CSS/JavaScript 前端交互
-- 本地规则推荐函数
-- 本地路线数据：`static/data/routes.json`
+- 本地规则推荐函数，运行时读取 Excel
+- 本地数据源：`上海路线数据.xlsx`
 - 地图展示区域预留，占位但不加载地图服务
 
 ## 项目结构
@@ -33,6 +35,7 @@ Moodscape-Shanghai/
 │     └─ routes.json
 ├─ services/
 │  ├─ __init__.py
+│  ├─ excel_data.py
 │  └─ recommender.py
 └─ tests/
    ├─ test_app.py
@@ -41,13 +44,14 @@ Moodscape-Shanghai/
 
 ## 文件作用
 
-- `app.py`：Flask 应用入口，提供首页和路线推荐接口。
-- `services/recommender.py`：本地规则推荐逻辑，根据情绪标签和用户文本给路线打分。
-- `static/data/routes.json`：从 `上海路线数据.xlsx` 整理出的前 5 条示例路线和点位数据。
+- `app.py`：Flask 应用入口，提供首页、标签接口、路线推荐接口和 mock 剧本接口。
+- `services/excel_data.py`：读取 `上海路线数据.xlsx`，组装路线、点位、体验标签、心境分值和匹配表。
+- `services/recommender.py`：本地规则推荐逻辑，根据 Excel 字段、用户选择和用户文本给路线打分。
+- `static/data/routes.json` / `static/data/tags.json`：历史静态备份，运行时推荐不依赖它们。
 - `templates/index.html`：首页页面结构。
 - `static/css/style.css`：页面样式。
 - `static/js/main.js`：标签选择、接口请求和推荐结果渲染。
-- `requirements.txt`：Python 依赖，目前包含 Flask。
+- `requirements.txt`：Python 依赖，包含 Flask 和 openpyxl。
 - `tests/`：基础单元测试，覆盖推荐函数和推荐接口。
 
 ## 安装依赖
@@ -83,10 +87,10 @@ http://127.0.0.1:5000/
 ## 测试首页
 
 1. 打开 `http://127.0.0.1:5000/`。
-2. 点击一个或多个情绪标签，例如“想一个人静静”“想慢慢走不赶路”。
+2. 点击一个或多个体验标签或心境标签，例如“一个人静静”“疗愈”。
 3. 在输入框中填写心情描述，例如“今天想一个人慢慢走，不赶路”。
 4. 点击“生成推荐”。
-5. 页面应展示推荐路线、推荐理由、预计时间、预算和点位列表。
+5. 页面应展示 2-3 条候选路线；点击候选路线可展开推荐理由、点位列表和 mock 剧本。
 
 ## 测试接口
 

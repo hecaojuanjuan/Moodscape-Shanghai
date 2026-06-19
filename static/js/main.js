@@ -8,22 +8,12 @@ const resultTitle = document.querySelector("#resultTitle");
 const tagGrid = document.querySelector("#tagGrid");
 const mindsetGrid = document.querySelector("#mindsetGrid");
 
-const mindsetTags = [
-  { tag: "独处", label: "独处", copy: "适合一个人安静停留，把城市走成自己的背景音。" },
-  { tag: "疗愈", label: "疗愈", copy: "适合累了、想放松、想恢复一点能量的时刻。" },
-  { tag: "灵感", label: "灵感", copy: "适合看展、观察街区、重新打开感受力。" },
-  { tag: "怀旧", label: "怀旧", copy: "适合老建筑、文学街区和旧时光的城市线索。" },
-  { tag: "成长", label: "成长", copy: "适合学习、涨见识和带着问题探索城市。" },
-  { tag: "浪漫", label: "浪漫", copy: "适合约会、江风、展厅和有氛围的慢步行。" },
-  { tag: "探索", label: "探索", copy: "适合冷门角落、城市支线和非标准路线。" },
-  { tag: "社交", label: "社交", copy: "适合朋友同行、逛吃聊天和热闹街区。" },
-];
-
 const selectedTags = new Set();
 const selectedTagLabels = new Map();
+let currentRoutes = [];
+let expandedRouteIndex = 0;
 
-loadEmotionTags();
-renderMindsetButtons();
+loadTags();
 
 recommendForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -48,8 +38,10 @@ recommendForm.addEventListener("submit", async (event) => {
     }
 
     const data = await response.json();
-    renderRecommendation(data.route, data.script, data);
-    statusText.textContent = "已生成一条适合当前心情的路线。";
+    currentRoutes = data.routes || [];
+    expandedRouteIndex = 0;
+    renderRouteOptions(currentRoutes);
+    statusText.textContent = "已生成候选路线。";
   } catch (error) {
     resultTitle.textContent = "生成失败";
     results.innerHTML = `<p class="empty-state">${escapeHtml(error.message)}</p>`;
@@ -59,21 +51,23 @@ recommendForm.addEventListener("submit", async (event) => {
   }
 });
 
-async function loadEmotionTags() {
+async function loadTags() {
   try {
-    const response = await fetch("/static/data/tags.json");
+    const response = await fetch("/api/tags");
     if (!response.ok) {
       throw new Error("标签数据加载失败。");
     }
 
-    const tags = await response.json();
-    renderTagButtons(tags);
+    const data = await response.json();
+    renderExperienceTagButtons(data.experience_tags || []);
+    renderMindsetButtons(data.mindset_tags || []);
   } catch (error) {
     tagGrid.innerHTML = `<p class="empty-state">${escapeHtml(error.message)}</p>`;
+    mindsetGrid.innerHTML = "";
   }
 }
 
-function renderTagButtons(tags) {
+function renderExperienceTagButtons(tags) {
   tagGrid.innerHTML = tags
     .map(
       (tag) => `
@@ -96,19 +90,18 @@ function renderTagButtons(tags) {
   });
 }
 
-function renderMindsetButtons() {
-  mindsetGrid.innerHTML = mindsetTags
+function renderMindsetButtons(tags) {
+  mindsetGrid.innerHTML = tags
     .map(
       (tag) => `
         <button
           type="button"
           class="tag-button mindset-button"
-          data-tag="${escapeHtml(tag.tag)}"
-          data-label="${escapeHtml(tag.label)}"
-          title="${escapeHtml(tag.copy)}"
+          data-tag="${escapeHtml(tag)}"
+          data-label="${escapeHtml(tag)}"
           aria-pressed="false"
         >
-          ${escapeHtml(tag.label)}
+          ${escapeHtml(tag)}
         </button>
       `,
     )
@@ -149,26 +142,56 @@ function updateSelectedTagsText() {
     .join(" / ");
 }
 
-function renderRecommendation(route, script, payload = {}) {
-  if (!route) {
+function renderRouteOptions(routes) {
+  if (!routes.length) {
     resultTitle.textContent = "暂无路线";
     results.innerHTML = '<p class="empty-state">暂时没有可展示的路线。</p>';
     return;
   }
 
-  resultTitle.textContent = route.route_name || "推荐路线";
+  resultTitle.textContent = "候选路线";
+  results.innerHTML = routes
+    .map((route, index) => renderRouteOption(route, index, index === expandedRouteIndex))
+    .join("");
 
-  const matchedTags = payload.matched_tags || route.matched_tags || [];
-  const matchedMindsets = payload.matched_mindsets || route.matched_mindsets || [];
-  const matchedLabels = [...matchedTags, ...matchedMindsets];
-  const matchedTagsHtml = matchedLabels.length
-    ? matchedLabels.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")
-    : "<span>默认推荐</span>";
+  results.querySelectorAll(".route-option").forEach((button) => {
+    button.addEventListener("click", () => toggleRouteDetail(Number(button.dataset.index)));
+  });
+}
 
-  const spots = payload.spots || route.spots || [];
-  const reason = payload.recommendation_reason || route.reason || "这条路线适合此刻的你。";
+function renderRouteOption(route, index, isExpanded) {
+  const labels = [...(route.matched_tags || []), ...(route.matched_mindsets || [])];
+  const labelsHtml = labels.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("");
 
-  const spotsHtml = spots
+  return `
+    <article class="route-card ${isExpanded ? "is-expanded" : ""}">
+      <button class="route-option" type="button" data-index="${index}" aria-expanded="${isExpanded}">
+        <div>
+          <strong>${escapeHtml(route.route_name)}</strong>
+          <p>${escapeHtml(route.suggested_card_copy || route.match_reason || route.route_intro_user_facing)}</p>
+        </div>
+        <span>${escapeHtml(route.match_percent)}%</span>
+      </button>
+      <div class="route-topline">
+        <span>${escapeHtml(route.estimated_time)}</span>
+        <span>${escapeHtml(route.budget_level)}预算</span>
+        <span>匹配度 ${escapeHtml(route.match_percent)}%</span>
+      </div>
+      <div class="matched-tags" aria-label="匹配标签">
+        ${labelsHtml}
+      </div>
+      ${isExpanded ? renderRouteDetail(route) : ""}
+    </article>
+  `;
+}
+
+function toggleRouteDetail(index) {
+  expandedRouteIndex = index;
+  renderRouteOptions(currentRoutes);
+}
+
+function renderRouteDetail(route) {
+  const spotsHtml = (route.spots || [])
     .map(
       (spot, index) => `
         <li class="spot-item">
@@ -176,52 +199,40 @@ function renderRecommendation(route, script, payload = {}) {
           <div>
             <strong>${escapeHtml(spot.name)}</strong>
             <p>${escapeHtml(spot.description)}</p>
-            <span>纬度 ${escapeHtml(spot.lat)} / 经度 ${escapeHtml(spot.lng)}</span>
+            <span>${escapeHtml(spot.open_time)} / ${escapeHtml(spot.ticket_reservation)}</span>
+            <span>${escapeHtml(spot.address)}</span>
           </div>
         </li>
       `,
     )
     .join("");
 
-  results.innerHTML = `
-    <article class="route-card">
-      <div class="route-topline">
-        <span>${escapeHtml(route.estimated_time)}</span>
-        <span>${escapeHtml(route.budget_level)}预算</span>
-        <span>匹配分 ${escapeHtml(route.score)}</span>
+  return `
+    <section class="route-section">
+      <h3>推荐理由</h3>
+      <p>${escapeHtml(route.match_reason)}</p>
+    </section>
+
+    <section class="route-section">
+      <h3>点位列表</h3>
+      <ol class="spot-list">${spotsHtml}</ol>
+    </section>
+
+    <section class="route-section script-box">
+      <h3>Mock AI 旅游剧本</h3>
+      <p>${escapeHtml(route.script)}</p>
+    </section>
+
+    <section class="map-placeholder" aria-label="地图预留区域">
+      <div class="map-grid"></div>
+      <div class="map-line"></div>
+      <div class="map-pin pin-one"></div>
+      <div class="map-pin pin-two"></div>
+      <div class="map-pin pin-three"></div>
+      <div class="map-copy">
+        <h3>地图预留区域</h3>
       </div>
-
-      <div class="matched-tags" aria-label="匹配情绪标签">
-        ${matchedTagsHtml}
-      </div>
-
-      <section class="route-section">
-        <h3>推荐理由</h3>
-        <p>${escapeHtml(reason)}</p>
-      </section>
-
-      <section class="route-section">
-        <h3>点位列表</h3>
-        <ol class="spot-list">${spotsHtml}</ol>
-      </section>
-
-      <section class="route-section script-box">
-        <h3>Mock AI 旅游剧本</h3>
-        <p>${escapeHtml(script)}</p>
-      </section>
-
-      <section class="map-placeholder" aria-label="地图预留区域">
-        <div class="map-grid"></div>
-        <div class="map-line"></div>
-        <div class="map-pin pin-one"></div>
-        <div class="map-pin pin-two"></div>
-        <div class="map-pin pin-three"></div>
-        <div class="map-copy">
-          <h3>地图预留区域</h3>
-          <p>后续可在这里接入真实地图 API，展示路线点位与连线。</p>
-        </div>
-      </section>
-    </article>
+    </section>
   `;
 }
 

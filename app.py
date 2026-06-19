@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, render_template, request
 
-from services.recommender import recommend_route, recommend_routes
+from services.recommender import load_mindset_tags, load_tags, recommend_route, recommend_routes
 
 
 app = Flask(__name__)
@@ -11,22 +11,35 @@ def index():
     return render_template("index.html")
 
 
+@app.get("/api/tags")
+def tags_api():
+    return jsonify(
+        {
+            "experience_tags": load_tags(),
+            "mindset_tags": load_mindset_tags(),
+        }
+    )
+
+
 @app.post("/api/generate-script")
 def generate_script_api():
     payload = request.get_json(silent=True) or {}
     selected_tags, user_text = _read_recommendation_payload(payload)
 
-    route = recommend_route(selected_tags=selected_tags, user_text=user_text)
-    script = generate_mock_script(route, user_text)
+    routes = recommend_routes(selected_tags=selected_tags, user_text=user_text, limit=3)
+    for route in routes:
+        route["script"] = generate_excel_script(route)
 
+    first_route = routes[0] if routes else {}
     return jsonify(
         {
-            "route": route,
-            "script": script,
-            "matched_tags": route.get("matched_tags", []) if route else [],
-            "matched_mindsets": route.get("matched_mindsets", []) if route else [],
-            "recommendation_reason": route.get("reason", "") if route else "",
-            "spots": route.get("spots", []) if route else [],
+            "routes": routes,
+            "route": first_route,
+            "script": first_route.get("script", ""),
+            "matched_tags": first_route.get("matched_tags", []),
+            "matched_mindsets": first_route.get("matched_mindsets", []),
+            "recommendation_reason": first_route.get("match_reason", ""),
+            "spots": first_route.get("spots", []),
         }
     )
 
@@ -36,7 +49,7 @@ def recommend_routes_api():
     payload = request.get_json(silent=True) or {}
     selected_tags, user_text = _read_recommendation_payload(payload)
 
-    routes = recommend_routes(selected_tags=selected_tags, user_text=user_text)
+    routes = recommend_routes(selected_tags=selected_tags, user_text=user_text, limit=3)
     return jsonify({"routes": routes})
 
 
@@ -53,25 +66,42 @@ def _read_recommendation_payload(payload):
     return selected_tags, user_text.strip()
 
 
-def generate_mock_script(route, user_text=""):
+def generate_excel_script(route):
     if not route:
-        return "这里是模拟生成的 AI 城市旅游剧本。暂时没有找到可用路线。"
+        return ""
 
-    spots = route.get("spots", [])
-    spot_names = "、".join(spot.get("name", "") for spot in spots if spot.get("name"))
-    first_spot = spots[0]["name"] if spots else "第一站"
-    last_spot = spots[-1]["name"] if spots else "终点"
-    mood_line = f"你刚才写下的心情是：{user_text}。" if user_text else "即使没有输入心情，也可以先把脚步交给城市。"
-    angle = route.get("ai_script_angle") or "城市漫步、情绪陪伴、慢旅行"
+    spot_lines = []
+    for spot in route.get("spots", []):
+        keywords = "、".join(spot.get("feedback_keywords", []))
+        spot_lines.append(
+            " / ".join(
+                part
+                for part in [
+                    spot.get("name", ""),
+                    spot.get("description", ""),
+                    spot.get("open_time", ""),
+                    spot.get("ticket_reservation", ""),
+                    keywords,
+                ]
+                if part
+            )
+        )
 
-    return (
-        f"这里是 Mock AI 旅游剧本：今天为你选择的是「{route.get('route_name', '上海情绪路线')}」。"
-        f"{mood_line}"
-        f"这条路线的叙事角度是「{angle}」。"
-        f"你会从{first_spot}开始，一路经过{spot_names}。"
-        f"推荐理由是：{route.get('reason', '这条路线适合此刻的你。')}"
-        f"走到{last_spot}时，可以停下来拍一张照片，或者给自己留一句今天的城市旁白。"
+    return "。".join(
+        part
+        for part in [
+            _script_part(route.get("route_name", "")),
+            _script_part(route.get("route_intro_user_facing", "")),
+            _script_part(route.get("ai_script_angle", "")),
+            _script_part(route.get("route_spots", "")),
+            "；".join(spot_lines),
+        ]
+        if part
     )
+
+
+def _script_part(value):
+    return str(value or "").strip().rstrip("。；; ")
 
 
 if __name__ == "__main__":
