@@ -75,6 +75,38 @@ class RecommenderTest(unittest.TestCase):
         self.assertEqual(routes[0]["route_id"], "R03")
         self.assertIn("想一个人静静", routes[0]["matched_tags"])
 
+    def test_profile_answers_do_not_trigger_recommendations_without_current_input(self):
+        routes = recommend_routes(
+            selected_tags=[],
+            user_text="",
+            profile_answers={
+                "pace": "slow_stop",
+                "healing_space": "quiet_street",
+                "shanghai_style": "old_shanghai",
+            },
+        )
+
+        self.assertEqual(routes, [])
+
+    def test_profile_similarity_enhances_triggered_recommendations(self):
+        routes = recommend_routes(
+            selected_tags=["想一个人静静"],
+            user_text="",
+            profile_answers={
+                "pace": "slow_stop",
+                "healing_space": "quiet_street",
+                "shanghai_style": "old_shanghai",
+                "companion": "solo",
+                "travel_persona": "low_stimulation",
+            },
+        )
+
+        self.assertEqual(len(routes), 3)
+        self.assertGreater(routes[0]["profile_similarity"], 0)
+        self.assertIn("慢节奏", routes[0]["matched_profile_traits"])
+        self.assertIn("profile_similarity", routes[0])
+        self.assertIn("matched_profile_traits", routes[0])
+
     def test_recommend_route_keeps_first_route_compatibility(self):
         route = recommend_route(selected_tags=["想被夜景治愈"], user_text="")
 

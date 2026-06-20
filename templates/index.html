@@ -7,7 +7,32 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   </head>
   <body>
-    <main class="app-shell">
+    <section class="profile-gate" id="profileGate" aria-labelledby="profileGateTitle">
+      <div class="profile-gate-card">
+        <p class="eyebrow">偏好画像</p>
+        <h1 id="profileGateTitle">先认识一下你的城市偏好</h1>
+        <p class="hero-copy" id="profileGateCopy">回答几个小问题，让路线更像是为你挑的。</p>
+
+        <div class="saved-profile-actions is-hidden" id="savedProfileActions">
+          <button type="button" class="primary-button" id="useSavedProfileButton">沿用上次画像进入</button>
+          <button type="button" class="secondary-button" id="restartProfileButton">重新作答</button>
+        </div>
+
+        <div class="profile-wizard" id="profileWizard">
+          <p class="profile-progress" id="profileProgress">1 / 5</p>
+          <h2 id="profileQuestionTitle"></h2>
+          <div class="profile-option-list" id="profileOptionList"></div>
+          <p class="status-text" id="profileStepHint" aria-live="polite"></p>
+          <div class="profile-actions">
+            <button type="button" class="secondary-button" id="profileBackButton">上一题</button>
+            <button type="button" class="secondary-button" id="profileSkipButton">跳过</button>
+            <button type="button" class="primary-button" id="profileNextButton">下一题</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <main class="app-shell is-hidden" id="appShell">
       <section class="hero" aria-labelledby="pageTitle">
         <p class="eyebrow">AI 城市体验原型</p>
         <h1 id="pageTitle">Moodscape Shanghai</h1>
@@ -28,6 +53,14 @@
             <div class="tag-grid mindset-grid" id="mindsetGrid" aria-live="polite">
               <p class="empty-state">正在计算心境标签...</p>
             </div>
+          </div>
+
+          <div class="field-group profile-summary">
+            <div>
+              <h2>偏好画像</h2>
+              <p id="profileSummaryText">已建立画像</p>
+            </div>
+            <button type="button" class="secondary-button" id="editProfileButton">修改画像</button>
           </div>
 
           <label class="field-group" for="userText">

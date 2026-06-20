@@ -59,6 +59,30 @@ class AppTest(unittest.TestCase):
                 self.assertIn("open_time", spot)
                 self.assertIn("ticket_reservation", spot)
 
+    def test_generate_script_endpoint_requires_current_input_before_profile_enhancement(self):
+        from app import app
+
+        client = app.test_client()
+        response = client.post(
+            "/api/generate-script",
+            json={
+                "selected_tags": [],
+                "user_text": "",
+                "profile_answers": {
+                    "pace": "slow_stop",
+                    "healing_space": "quiet_street",
+                    "shanghai_style": "old_shanghai",
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertTrue(data["needs_input"])
+        self.assertEqual(data["routes"], [])
+        self.assertEqual(data["message"], "请在左侧选择标签，或者写入你的心情状态。")
+        self.assertEqual(data["script"], "")
+
     def test_recommend_routes_endpoint_returns_multiple_routes(self):
         from app import app
 
@@ -76,6 +100,30 @@ class AppTest(unittest.TestCase):
         self.assertEqual(len(data["routes"]), 3)
         self.assertEqual(data["routes"][0]["route_id"], "R26")
         self.assertIn("疗愈", data["routes"][0]["matched_mindsets"])
+
+    def test_recommend_routes_endpoint_includes_profile_similarity_when_profile_is_valid(self):
+        from app import app
+
+        client = app.test_client()
+        response = client.post(
+            "/api/recommend-routes",
+            json={
+                "selected_tags": ["想一个人静静"],
+                "user_text": "",
+                "profile_answers": {
+                    "pace": "slow_stop",
+                    "healing_space": "quiet_street",
+                    "shanghai_style": "old_shanghai",
+                    "companion": "solo",
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertFalse(data["needs_input"])
+        self.assertGreater(data["routes"][0]["profile_similarity"], 0)
+        self.assertIn("安静", data["routes"][0]["matched_profile_traits"])
 
 
 if __name__ == "__main__":

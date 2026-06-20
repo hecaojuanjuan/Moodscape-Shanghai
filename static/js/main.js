@@ -1,3 +1,18 @@
+const profileGate = document.querySelector("#profileGate");
+const appShell = document.querySelector("#appShell");
+const savedProfileActions = document.querySelector("#savedProfileActions");
+const useSavedProfileButton = document.querySelector("#useSavedProfileButton");
+const restartProfileButton = document.querySelector("#restartProfileButton");
+const profileWizard = document.querySelector("#profileWizard");
+const profileProgress = document.querySelector("#profileProgress");
+const profileQuestionTitle = document.querySelector("#profileQuestionTitle");
+const profileOptionList = document.querySelector("#profileOptionList");
+const profileStepHint = document.querySelector("#profileStepHint");
+const profileBackButton = document.querySelector("#profileBackButton");
+const profileSkipButton = document.querySelector("#profileSkipButton");
+const profileNextButton = document.querySelector("#profileNextButton");
+const editProfileButton = document.querySelector("#editProfileButton");
+const profileSummaryText = document.querySelector("#profileSummaryText");
 const recommendForm = document.querySelector("#recommendForm");
 const generateButton = document.querySelector("#generateButton");
 const userText = document.querySelector("#userText");
@@ -7,16 +22,86 @@ const selectedTagsText = document.querySelector("#selectedTagsText");
 const resultTitle = document.querySelector("#resultTitle");
 const tagGrid = document.querySelector("#tagGrid");
 const mindsetGrid = document.querySelector("#mindsetGrid");
+const needsInputMessage = "请在左侧选择标签，或者写入你的心情状态。";
+const profileStorageKey = "moodscapeProfileAnswers";
+
+const profileQuestions = [
+  {
+    id: "pace",
+    title: "你平时在城市里最舒服的节奏是？",
+    required: true,
+    options: [
+      { value: "slow_stop", label: "慢慢走，能停就停" },
+      { value: "clear_content", label: "有明确目标，想看点有内容的" },
+      { value: "loose_surprise", label: "不想安排太满，但希望有惊喜" },
+      { value: "lively_food", label: "热闹一点，边逛边吃" },
+    ],
+  },
+  {
+    id: "healing_space",
+    title: "你更容易被哪种空间治愈？",
+    required: true,
+    options: [
+      { value: "quiet_street", label: "书店、咖啡馆、公园、安静街区" },
+      { value: "art_space", label: "美术馆、展览、设计空间" },
+      { value: "historic_area", label: "老建筑、弄堂、历史街区" },
+      { value: "river_night", label: "江边、夜景、城市地标" },
+    ],
+  },
+  {
+    id: "shanghai_style",
+    title: "你更想遇见哪种上海？",
+    required: true,
+    options: [
+      { value: "old_shanghai", label: "老上海、烟火气、历史感" },
+      { value: "future_city", label: "未来感、高楼、城市震撼" },
+      { value: "natural_waterfront", label: "自然水岸、公园、轻松散步" },
+      { value: "hidden_corner", label: "小众角落、意外发现" },
+    ],
+  },
+  {
+    id: "companion",
+    title: "你通常更适合哪种同行状态？",
+    required: false,
+    options: [
+      { value: "solo", label: "一个人" },
+      { value: "couple", label: "两个人约会" },
+      { value: "family", label: "亲子家庭" },
+      { value: "friends", label: "朋友一起" },
+    ],
+  },
+  {
+    id: "travel_persona",
+    title: "如果用一句话描述你的旅行人格？",
+    required: false,
+    options: [
+      { value: "low_stimulation", label: "低刺激、慢节奏" },
+      { value: "inspiration_hunter", label: "灵感猎人" },
+      { value: "classic_comfort", label: "经典地标也要舒服" },
+      { value: "niche_explorer", label: "越小众越兴奋" },
+    ],
+  },
+];
 
 const selectedTags = new Set();
 const selectedTagLabels = new Map();
 let currentRoutes = [];
 let expandedRouteIndex = null;
+let profileAnswers = {};
+let profileDraftAnswers = {};
+let profileStepIndex = 0;
 
 loadTags();
+initProfileGate();
 
 recommendForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  const trimmedUserText = userText.value.trim();
+
+  if (selectedTags.size === 0 && trimmedUserText === "") {
+    showNeedsInput(needsInputMessage);
+    return;
+  }
 
   setLoading(true);
   statusText.textContent = "正在生成路线和城市剧本...";
@@ -29,7 +114,8 @@ recommendForm.addEventListener("submit", async (event) => {
       },
       body: JSON.stringify({
         selected_tags: Array.from(selectedTags),
-        user_text: userText.value.trim(),
+        user_text: trimmedUserText,
+        profile_answers: collectProfileAnswers(),
       }),
     });
 
@@ -38,6 +124,11 @@ recommendForm.addEventListener("submit", async (event) => {
     }
 
     const data = await response.json();
+    if (data.needs_input) {
+      showNeedsInput(data.message || needsInputMessage);
+      return;
+    }
+
     currentRoutes = data.routes || [];
     expandedRouteIndex = null;
     renderRouteOptions(currentRoutes);
@@ -50,6 +141,168 @@ recommendForm.addEventListener("submit", async (event) => {
     setLoading(false);
   }
 });
+
+useSavedProfileButton.addEventListener("click", () => {
+  const savedProfile = loadSavedProfileAnswers();
+  if (savedProfile) {
+    enterAppWithProfile(savedProfile);
+  } else {
+    restartProfileFlow();
+  }
+});
+
+restartProfileButton.addEventListener("click", () => restartProfileFlow());
+editProfileButton.addEventListener("click", () => restartProfileFlow(profileAnswers));
+
+profileBackButton.addEventListener("click", () => {
+  if (profileStepIndex > 0) {
+    profileStepIndex -= 1;
+    renderProfileStep();
+  }
+});
+
+profileSkipButton.addEventListener("click", () => {
+  const question = profileQuestions[profileStepIndex];
+  delete profileDraftAnswers[question.id];
+  goToNextProfileStep();
+});
+
+profileNextButton.addEventListener("click", () => {
+  const question = profileQuestions[profileStepIndex];
+  if (question.required && !profileDraftAnswers[question.id]) {
+    return;
+  }
+  goToNextProfileStep();
+});
+
+function initProfileGate() {
+  const savedProfile = loadSavedProfileAnswers();
+  if (hasCompletedCoreProfile(savedProfile)) {
+    showSavedProfileChoice();
+    return;
+  }
+
+  restartProfileFlow();
+}
+
+function showSavedProfileChoice() {
+  profileGate.classList.remove("is-hidden");
+  appShell.classList.add("is-hidden");
+  savedProfileActions.classList.remove("is-hidden");
+  profileWizard.classList.add("is-hidden");
+}
+
+function restartProfileFlow(initialAnswers = {}) {
+  profileDraftAnswers = { ...initialAnswers };
+  profileStepIndex = 0;
+  profileGate.classList.remove("is-hidden");
+  appShell.classList.add("is-hidden");
+  savedProfileActions.classList.add("is-hidden");
+  profileWizard.classList.remove("is-hidden");
+  renderProfileStep();
+}
+
+function renderProfileStep() {
+  const question = profileQuestions[profileStepIndex];
+  const selectedValue = profileDraftAnswers[question.id] || "";
+  const isLastQuestion = profileStepIndex === profileQuestions.length - 1;
+
+  profileProgress.textContent = `${profileStepIndex + 1} / ${profileQuestions.length}`;
+  profileQuestionTitle.textContent = question.title;
+  profileStepHint.textContent = question.required ? "请选择一个答案" : "这题可以跳过";
+  profileBackButton.disabled = profileStepIndex === 0;
+  profileSkipButton.classList.toggle("is-hidden", question.required);
+  profileNextButton.disabled = question.required && !selectedValue;
+  profileNextButton.textContent = isLastQuestion ? "进入网站" : "下一题";
+
+  profileOptionList.innerHTML = question.options
+    .map(
+      (option) => `
+        <button
+          type="button"
+          class="profile-option-button ${option.value === selectedValue ? "is-selected" : ""}"
+          data-value="${escapeHtml(option.value)}"
+        >
+          ${escapeHtml(option.label)}
+        </button>
+      `,
+    )
+    .join("");
+
+  profileOptionList.querySelectorAll(".profile-option-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      profileDraftAnswers[question.id] = button.dataset.value;
+      renderProfileStep();
+    });
+  });
+}
+
+function goToNextProfileStep() {
+  if (profileStepIndex === profileQuestions.length - 1) {
+    enterAppWithProfile(profileDraftAnswers);
+    return;
+  }
+
+  profileStepIndex += 1;
+  renderProfileStep();
+}
+
+function enterAppWithProfile(answers) {
+  profileAnswers = sanitizeProfileAnswers(answers);
+  saveProfileAnswers(profileAnswers);
+  profileGate.classList.add("is-hidden");
+  appShell.classList.remove("is-hidden");
+  updateProfileSummary();
+}
+
+function saveProfileAnswers(answers) {
+  try {
+    localStorage.setItem(profileStorageKey, JSON.stringify(answers));
+  } catch (error) {
+    return;
+  }
+}
+
+function loadSavedProfileAnswers() {
+  try {
+    const rawProfile = localStorage.getItem(profileStorageKey);
+    if (!rawProfile) {
+      return null;
+    }
+    return sanitizeProfileAnswers(JSON.parse(rawProfile));
+  } catch (error) {
+    return null;
+  }
+}
+
+function sanitizeProfileAnswers(answers) {
+  if (!answers || typeof answers !== "object") {
+    return {};
+  }
+
+  const cleanAnswers = {};
+  profileQuestions.forEach((question) => {
+    const value = answers[question.id];
+    if (question.options.some((option) => option.value === value)) {
+      cleanAnswers[question.id] = value;
+    }
+  });
+  return cleanAnswers;
+}
+
+function hasCompletedCoreProfile(answers) {
+  return profileQuestions
+    .filter((question) => question.required)
+    .every((question) => answers && answers[question.id]);
+}
+
+function updateProfileSummary() {
+  const labels = profileQuestions
+    .map((question) => question.options.find((option) => option.value === profileAnswers[question.id])?.label)
+    .filter(Boolean);
+
+  profileSummaryText.textContent = labels.length ? labels.join(" / ") : "已建立画像";
+}
 
 async function loadTags() {
   try {
@@ -142,6 +395,17 @@ function updateSelectedTagsText() {
     .join(" / ");
 }
 
+function collectProfileAnswers() {
+  return { ...profileAnswers };
+}
+
+function showNeedsInput(message) {
+  window.alert(message);
+  resultTitle.textContent = "需要更多信息";
+  results.innerHTML = `<p class="empty-state">${escapeHtml(message)}</p>`;
+  statusText.textContent = "";
+}
+
 function renderRouteOptions(routes) {
   if (!routes.length) {
     resultTitle.textContent = "暂无路线";
@@ -164,7 +428,11 @@ function renderRouteOptions(routes) {
 }
 
 function renderRouteOption(route, index, isExpanded) {
-  const labels = [...(route.matched_tags || []), ...(route.matched_mindsets || [])];
+  const labels = uniqueLabels([
+    ...(route.matched_tags || []),
+    ...(route.matched_mindsets || []),
+    ...(route.matched_profile_traits || []),
+  ]);
   const labelsHtml = labels.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("");
 
   return `
@@ -261,6 +529,10 @@ function renderRouteDetail(route, index) {
 function setLoading(isLoading) {
   generateButton.disabled = isLoading;
   generateButton.textContent = isLoading ? "生成中..." : "生成路线剧本";
+}
+
+function uniqueLabels(labels) {
+  return labels.filter((label, index) => label && labels.indexOf(label) === index);
 }
 
 function escapeHtml(value) {

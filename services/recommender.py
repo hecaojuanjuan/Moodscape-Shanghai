@@ -2,6 +2,12 @@ import copy
 import re
 
 from services.excel_data import load_excel_data
+from services.profile_vector import (
+    build_route_profile_vector,
+    build_user_profile_vector,
+    cosine_similarity,
+    matched_profile_traits,
+)
 
 
 SELECTED_MAPPING_BASE = 500
@@ -17,6 +23,7 @@ MINDSET_MAX_SCORE = 100
 SELECTED_MINDSET_WEIGHT = 1.15
 TEXT_MINDSET_WEIGHT = 0.65
 TOKEN_MATCH_SCORE = 4
+PROFILE_SIMILARITY_SCORE = 180
 MATCH_PERCENT_CAP = 98
 
 
@@ -32,30 +39,47 @@ def load_mindset_tags():
     return list(load_excel_data()["mindset_tags"])
 
 
-def recommend_route(selected_tags=None, user_text="", limit=3):
-    routes = recommend_routes(selected_tags=selected_tags, user_text=user_text, limit=limit)
+def recommend_route(selected_tags=None, user_text="", profile_answers=None, limit=3):
+    routes = recommend_routes(
+        selected_tags=selected_tags,
+        user_text=user_text,
+        profile_answers=profile_answers,
+        limit=limit,
+    )
     return routes[0] if routes else {}
 
 
-def recommend_routes(selected_tags=None, user_text="", limit=3):
+def recommend_routes(selected_tags=None, user_text="", profile_answers=None, limit=3):
     data = load_excel_data()
     selected = _normalize_selected_tags(selected_tags)
     user_text = user_text if isinstance(user_text, str) else ""
+    if not selected and not user_text.strip():
+        return []
 
     selected_experience_tags, selected_mindsets = _split_selected_tags(selected, data)
     text_matched_tags = _match_tags_from_text(user_text, data)
     text_matched_mindsets = _match_mindsets_from_text(user_text, text_matched_tags, data)
+    user_profile = build_user_profile_vector(profile_answers)
     possible_score = _query_possible_score(
         selected_experience_tags,
         selected_mindsets,
         text_matched_tags,
         text_matched_mindsets,
         user_text,
+        bool(user_profile["vector"]),
     )
 
     scored = []
     for index, route in enumerate(data["routes"]):
-        raw_score, matched_tags, matched_mindsets, reason, card_copy = _score_route(
+        (
+            raw_score,
+            matched_tags,
+            matched_mindsets,
+            reason,
+            card_copy,
+            profile_similarity,
+            profile_traits,
+        ) = _score_route(
             route,
             selected_experience_tags,
             selected_mindsets,
@@ -63,6 +87,7 @@ def recommend_routes(selected_tags=None, user_text="", limit=3):
             text_matched_mindsets,
             user_text,
             data,
+            user_profile,
         )
         scored.append(
             {
@@ -74,6 +99,8 @@ def recommend_routes(selected_tags=None, user_text="", limit=3):
                 "matched_mindsets": matched_mindsets,
                 "match_reason": reason,
                 "suggested_card_copy": card_copy,
+                "profile_similarity": profile_similarity,
+                "matched_profile_traits": profile_traits,
             }
         )
 
@@ -158,12 +185,14 @@ def _match_mindsets_from_text(user_text, text_matched_tags, data):
     return matched
 
 
-def _score_route(route, selected_tags, selected_mindsets, text_tags, text_mindsets, user_text, data):
+def _score_route(route, selected_tags, selected_mindsets, text_tags, text_mindsets, user_text, data, user_profile):
     matched_tags = []
     matched_mindsets = []
     reasons = []
     card_copies = []
     score = 0.0
+    profile_similarity = 0
+    profile_traits = []
 
     mapping_by_pair = {
         (mapping["emotion_tag"], mapping["route_id"]): mapping
@@ -205,9 +234,16 @@ def _score_route(route, selected_tags, selected_mindsets, text_tags, text_mindse
         if token in route_text:
             score += TOKEN_MATCH_SCORE
 
+    if user_profile["vector"]:
+        route_vector = build_route_profile_vector(route)
+        profile_similarity = cosine_similarity(user_profile["vector"], route_vector)
+        if profile_similarity:
+            score += profile_similarity * PROFILE_SIMILARITY_SCORE
+            profile_traits = matched_profile_traits(user_profile, route_vector)
+
     reason = next((reason for reason in reasons if reason), "") or route["route_intro_user_facing"] or route["suitable_mood"] or route["ai_script_angle"]
     card_copy = next((copy_text for copy_text in card_copies if copy_text), "") or route["route_intro_user_facing"]
-    return score, matched_tags, matched_mindsets, reason, card_copy
+    return score, matched_tags, matched_mindsets, reason, card_copy, profile_similarity, profile_traits
 
 
 def _experience_tag_score(route, tag, mapping_by_pair, selected):
@@ -232,7 +268,7 @@ def _mindset_score(route, mindset, selected):
     return value * (SELECTED_MINDSET_WEIGHT if selected else TEXT_MINDSET_WEIGHT)
 
 
-def _query_possible_score(selected_tags, selected_mindsets, text_tags, text_mindsets, user_text):
+def _query_possible_score(selected_tags, selected_mindsets, text_tags, text_mindsets, user_text, has_profile):
     score = 0.0
     for _ in selected_tags:
         score += _experience_tag_possible_score(selected=True)
@@ -243,6 +279,8 @@ def _query_possible_score(selected_tags, selected_mindsets, text_tags, text_mind
     for _ in text_mindsets:
         score += MINDSET_MAX_SCORE * TEXT_MINDSET_WEIGHT
     score += len(_input_tokens(user_text)) * TOKEN_MATCH_SCORE
+    if has_profile:
+        score += PROFILE_SIMILARITY_SCORE
     return score
 
 
@@ -274,6 +312,8 @@ def _format_candidates(candidates, possible_score):
         route["matched_mindsets"] = item["matched_mindsets"]
         route["match_reason"] = item["match_reason"]
         route["suggested_card_copy"] = item["suggested_card_copy"]
+        route["profile_similarity"] = round(item["profile_similarity"], 3)
+        route["matched_profile_traits"] = item["matched_profile_traits"]
         formatted.append(route)
     return formatted
 
