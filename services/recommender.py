@@ -1,6 +1,7 @@
 import copy
 import re
 
+from services.dynamic_routes import build_dynamic_routes, distance_km
 from services.excel_data import load_excel_data
 from services.profile_vector import (
     build_route_profile_vector,
@@ -69,6 +70,47 @@ def recommend_routes(selected_tags=None, user_text="", profile_answers=None, lim
         bool(user_profile["vector"]),
     )
 
+    seed_routes = _recommend_seed_routes(
+        data,
+        selected_experience_tags,
+        selected_mindsets,
+        text_matched_tags,
+        text_matched_mindsets,
+        user_text,
+        user_profile,
+        possible_score,
+        limit,
+    )
+    if not seed_routes:
+        return []
+
+    dynamic_routes = build_dynamic_routes(
+        data=data,
+        seed_routes=seed_routes,
+        selected_tags=selected_experience_tags,
+        selected_mindsets=selected_mindsets,
+        text_tags=text_matched_tags,
+        text_mindsets=text_matched_mindsets,
+        user_text=user_text,
+        user_profile=user_profile,
+        possible_score=possible_score,
+        match_percent=_match_percent,
+        limit=limit,
+    )
+    return dynamic_routes or seed_routes
+
+
+def _recommend_seed_routes(
+    data,
+    selected_experience_tags,
+    selected_mindsets,
+    text_matched_tags,
+    text_matched_mindsets,
+    user_text,
+    user_profile,
+    possible_score,
+    limit,
+):
     scored = []
     for index, route in enumerate(data["routes"]):
         (
@@ -314,6 +356,9 @@ def _format_candidates(candidates, possible_score):
         route["suggested_card_copy"] = item["suggested_card_copy"]
         route["profile_similarity"] = round(item["profile_similarity"], 3)
         route["matched_profile_traits"] = item["matched_profile_traits"]
+        route["is_dynamic"] = False
+        route["source_route_ids"] = [route["route_id"]]
+        route["route_distance_km"] = round(_route_distance_km(route.get("spots", [])), 2)
         formatted.append(route)
     return formatted
 
@@ -353,6 +398,10 @@ def _route_search_text(route):
             ]
         )
     return _search_text(*parts)
+
+
+def _route_distance_km(spots):
+    return sum(distance_km(left, right) for left, right in zip(spots, spots[1:]))
 
 
 def _input_tokens(user_text):

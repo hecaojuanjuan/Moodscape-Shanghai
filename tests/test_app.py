@@ -40,6 +40,10 @@ class AppTest(unittest.TestCase):
 
         first = data["routes"][0]
         self.assertEqual(first["route_id"], "R03")
+        self.assertEqual(first["route_name"], "武康路书香独处线")
+        self.assertNotIn("动态组合线", first["route_name"])
+        self.assertIn("is_dynamic", first)
+        self.assertIn("route_distance_km", first)
         self.assertIn("武康大楼", first["match_reason"])
         self.assertIn("武康大楼", first["script"])
         self.assertNotIn("给自己留一句", first["script"])
@@ -99,6 +103,8 @@ class AppTest(unittest.TestCase):
         data = response.get_json()
         self.assertEqual(len(data["routes"]), 3)
         self.assertEqual(data["routes"][0]["route_id"], "R26")
+        self.assertEqual(data["routes"][0]["route_name"], "松江郊野文化疗愈线")
+        self.assertNotIn("动态组合线", data["routes"][0]["route_name"])
         self.assertIn("疗愈", data["routes"][0]["matched_mindsets"])
 
     def test_recommend_routes_endpoint_includes_profile_similarity_when_profile_is_valid(self):

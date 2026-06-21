@@ -11,72 +11,77 @@ DEFAULT_EXCEL_PATH = PROJECT_ROOT / "上海路线数据.xlsx"
 @lru_cache(maxsize=4)
 def load_excel_data(excel_path=DEFAULT_EXCEL_PATH):
     workbook = load_workbook(excel_path, read_only=True, data_only=True)
-    route_rows = _read_table(workbook.worksheets[0])
-    spot_rows = _read_table(workbook.worksheets[1])
-    tag_rows = _read_table(workbook.worksheets[2])
-    mapping_rows = _read_table(workbook.worksheets[3])
+    try:
+        route_rows = _read_table(workbook.worksheets[0])
+        spot_rows = _read_table(workbook.worksheets[1])
+        tag_rows = _read_table(workbook.worksheets[2])
+        mapping_rows = _read_table(workbook.worksheets[3])
 
-    tags = [_normalize_tag(row) for row in tag_rows if row.get("tag_id")]
-    spots_by_route = _build_spots_by_route(spot_rows)
-    mappings_by_tag = _build_mappings(mapping_rows)
+        tags = [_normalize_tag(row) for row in tag_rows if row.get("tag_id")]
+        spots = _build_spots(spot_rows)
+        spots_by_route = _group_spots_by_route(spots)
+        mappings_by_tag = _build_mappings(mapping_rows)
 
-    routes = []
-    for row in route_rows:
-        route_id = row.get("route_id")
-        if not route_id:
-            continue
+        routes = []
+        for row in route_rows:
+            route_id = row.get("route_id")
+            if not route_id:
+                continue
 
-        spots = spots_by_route.get(route_id, [])
-        primary_tags = _split_list(row.get("primary_emotion_tags"))
-        secondary_tags = _split_list(row.get("secondary_emotion_tags"))
-        route = {
-            "route_id": route_id,
-            "route_name": _text(row.get("route_name")),
-            "route_intro_user_facing": _text(row.get("route_intro_user_facing")),
-            "reason": _text(row.get("route_intro_user_facing")),
-            "primary_emotion_tags": primary_tags,
-            "secondary_emotion_tags": secondary_tags,
-            "backend_scene_tags": _split_list(row.get("backend_scene_tags")),
-            "tags": primary_tags + [tag for tag in secondary_tags if tag not in primary_tags],
-            "suitable_mood": _text(row.get("suitable_mood")),
-            "estimated_time": _text(row.get("estimated_time")),
-            "budget_level": _text(row.get("budget_level")),
-            "route_spots": _text(row.get("route_spots")),
-            "ai_script_angle": _text(row.get("ai_script_angle")),
+            route_spots = spots_by_route.get(route_id, [])
+            primary_tags = _split_list(row.get("primary_emotion_tags"))
+            secondary_tags = _split_list(row.get("secondary_emotion_tags"))
+            route = {
+                "route_id": route_id,
+                "route_name": _text(row.get("route_name")),
+                "route_intro_user_facing": _text(row.get("route_intro_user_facing")),
+                "reason": _text(row.get("route_intro_user_facing")),
+                "primary_emotion_tags": primary_tags,
+                "secondary_emotion_tags": secondary_tags,
+                "backend_scene_tags": _split_list(row.get("backend_scene_tags")),
+                "tags": primary_tags + [tag for tag in secondary_tags if tag not in primary_tags],
+                "suitable_mood": _text(row.get("suitable_mood")),
+                "estimated_time": _text(row.get("estimated_time")),
+                "budget_level": _text(row.get("budget_level")),
+                "route_spots": _text(row.get("route_spots")),
+                "ai_script_angle": _text(row.get("ai_script_angle")),
+                "spots": route_spots,
+            }
+            route["mindset_scores"] = _average_mindset_scores(route_spots)
+            route["dominant_mindsets"] = _dominant_mindsets(route["mindset_scores"])
+            route["tag_match_priority"] = {
+                mapping["emotion_tag"]: mapping["priority"]
+                for mapping in mappings_by_tag.values()
+                if mapping["route_id"] == route_id and isinstance(mapping["priority"], int)
+            }
+            route["tag_match_reasons"] = {
+                mapping["emotion_tag"]: mapping["match_reason"]
+                for mapping in mappings_by_tag.values()
+                if mapping["route_id"] == route_id and mapping["match_reason"]
+            }
+            route["suggested_card_copy_by_tag"] = {
+                mapping["emotion_tag"]: mapping["suggested_card_copy"]
+                for mapping in mappings_by_tag.values()
+                if mapping["route_id"] == route_id and mapping["suggested_card_copy"]
+            }
+            routes.append(route)
+
+        route_ids = {route["route_id"] for route in routes}
+        mappings = [
+            mapping
+            for mapping in mappings_by_tag.values()
+            if mapping["route_id"] in route_ids
+        ]
+
+        return {
+            "routes": routes,
             "spots": spots,
+            "tags": tags,
+            "mappings": mappings,
+            "mindset_tags": _extract_mindset_tags(spot_rows),
         }
-        route["mindset_scores"] = _average_mindset_scores(spots)
-        route["dominant_mindsets"] = _dominant_mindsets(route["mindset_scores"])
-        route["tag_match_priority"] = {
-            mapping["emotion_tag"]: mapping["priority"]
-            for mapping in mappings_by_tag.values()
-            if mapping["route_id"] == route_id and isinstance(mapping["priority"], int)
-        }
-        route["tag_match_reasons"] = {
-            mapping["emotion_tag"]: mapping["match_reason"]
-            for mapping in mappings_by_tag.values()
-            if mapping["route_id"] == route_id and mapping["match_reason"]
-        }
-        route["suggested_card_copy_by_tag"] = {
-            mapping["emotion_tag"]: mapping["suggested_card_copy"]
-            for mapping in mappings_by_tag.values()
-            if mapping["route_id"] == route_id and mapping["suggested_card_copy"]
-        }
-        routes.append(route)
-
-    route_ids = {route["route_id"] for route in routes}
-    mappings = [
-        mapping
-        for mapping in mappings_by_tag.values()
-        if mapping["route_id"] in route_ids
-    ]
-
-    return {
-        "routes": routes,
-        "tags": tags,
-        "mappings": mappings,
-        "mindset_tags": _extract_mindset_tags(spot_rows),
-    }
+    finally:
+        workbook.close()
 
 
 def _read_table(sheet):
@@ -108,18 +113,18 @@ def _normalize_tag(row):
     }
 
 
-def _build_spots_by_route(spot_rows):
-    spots_by_route = {}
+def _build_spots(spot_rows):
+    spots = []
     for row in spot_rows:
-        route_id = row.get("route_id")
+        route_id = _text(row.get("route_id"))
         spot_id = row.get("spot_id")
-        if not route_id or not spot_id:
+        if not spot_id:
             continue
 
         lat, lng = _parse_lat_lng(row.get("经纬度（WGS84）"))
         spot = {
             "spot_id": _text(spot_id),
-            "route_id": _text(route_id),
+            "route_id": route_id,
             "spot_order": _int(row.get("spot_order")),
             "name": _text(row.get("spot_name")),
             "description": _text(row.get("user_experience_value")),
@@ -146,8 +151,17 @@ def _build_spots_by_route(spot_rows):
             },
             "mindset_scores": _parse_mindset_scores(row.get("心境指数（图1百分比计算）")),
         }
-        spots_by_route.setdefault(route_id, []).append(spot)
+        spots.append(spot)
 
+    return spots
+
+
+def _group_spots_by_route(spots):
+    spots_by_route = {}
+    for spot in spots:
+        if not spot["route_id"]:
+            continue
+        spots_by_route.setdefault(spot["route_id"], []).append(spot)
     for spots in spots_by_route.values():
         spots.sort(key=lambda spot: spot["spot_order"])
     return spots_by_route
