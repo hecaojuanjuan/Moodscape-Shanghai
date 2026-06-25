@@ -1,62 +1,30 @@
 # Moodscape Shanghai
 
-Moodscape Shanghai 是一个基于情绪标签的上海个性化旅游推荐网站原型。
+Moodscape Shanghai 是一个基于情绪、偏好画像和真实城市点位的上海个性化旅行推荐原型。
 
-当前版本是最小可运行 Flask MVP：用户可以选择体验标签/心境标签、输入心情描述，系统会从本地 Excel 数据库 `上海路线数据.xlsx` 中推荐 2-3 条上海路线。此版本不接真实大模型 API，不接地图 API，也不引入复杂前端框架。
+系统采用混合推荐架构：
+
+1. 百炼千问把用户的自由文本解析成受控体验标签和心境标签。
+2. 本地 Excel 数据与规则算法完成路线候选、排序和动态点位组合。
+3. 千问根据真实路线数据一次生成三条旅行剧本。
+4. 高德地图 JavaScript API 2.0 把 WGS84 点位转换为高德坐标，并逐段规划真实步行路线。
+
+用户手选标签的权重高于模型推断标签。模型只负责理解和表达，不能新增景点、改变点位顺序或覆盖 Excel 中的开放时间与票务信息。
 
 ## 当前功能
 
 - Flask 首页：`GET /`
 - 标签接口：`GET /api/tags`
-- 剧本和候选路线接口：`POST /api/generate-script`
-- 路线推荐接口：`POST /api/recommend-routes`
-- 原生 HTML/CSS/JavaScript 前端交互
-- 本地规则推荐函数，运行时读取 Excel
-- 本地数据源：`上海路线数据.xlsx`
-- 地图展示区域预留，占位但不加载地图服务
+- 路线与 AI 剧本接口：`POST /api/generate-script`
+- 兼容的本地路线接口：`POST /api/recommend-routes`
+- Excel 路线、点位、标签和匹配表作为事实数据源
+- 千问意图解析与三条路线批量文案生成
+- 高德地图编号标记、WGS84 坐标转换和逐段步行规划
+- API 不可用时自动本地回退，路线推荐仍可使用
 
-## 项目结构
+## 安装
 
-```text
-Moodscape-Shanghai/
-├─ app.py
-├─ requirements.txt
-├─ README.md
-├─ .gitignore
-├─ 上海路线数据.xlsx
-├─ templates/
-│  └─ index.html
-├─ static/
-│  ├─ css/
-│  │  └─ style.css
-│  ├─ js/
-│  │  └─ main.js
-│  └─ data/
-│     └─ routes.json
-├─ services/
-│  ├─ __init__.py
-│  ├─ excel_data.py
-│  └─ recommender.py
-└─ tests/
-   ├─ test_app.py
-   └─ test_recommender.py
-```
-
-## 文件作用
-
-- `app.py`：Flask 应用入口，提供首页、标签接口、路线推荐接口和 mock 剧本接口。
-- `services/excel_data.py`：读取 `上海路线数据.xlsx`，组装路线、点位、体验标签、心境分值和匹配表。
-- `services/recommender.py`：本地规则推荐逻辑，根据 Excel 字段、用户选择和用户文本给路线打分。
-- `static/data/routes.json` / `static/data/tags.json`：历史静态备份，运行时推荐不依赖它们。
-- `templates/index.html`：首页页面结构。
-- `static/css/style.css`：页面样式。
-- `static/js/main.js`：标签选择、接口请求和推荐结果渲染。
-- `requirements.txt`：Python 依赖，包含 Flask 和 openpyxl。
-- `tests/`：基础单元测试，覆盖推荐函数和推荐接口。
-
-## 安装依赖
-
-Windows PowerShell:
+Windows PowerShell：
 
 ```powershell
 python -m venv venv
@@ -64,7 +32,7 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-macOS / Linux:
+macOS / Linux：
 
 ```bash
 python3 -m venv venv
@@ -72,57 +40,100 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## 运行项目
+## 配置百炼千问与高德地图
 
-```bash
+复制配置模板：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+在 `.env` 中填写：
+
+```dotenv
+QWEN_API_KEY=你的百炼APIKey
+QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+QWEN_MODEL=qwen3.5-plus
+LLM_TIMEOUT_SECONDS=20
+
+AMAP_JS_KEY=你的高德Web端JSKey
+AMAP_SECURITY_JS_CODE=你的高德安全密钥
+```
+
+申请入口：
+
+- [阿里云百炼千问 API](https://help.aliyun.com/zh/model-studio/use-qwen-by-calling-api)
+- [高德地图 JavaScript API 2.0](https://lbs.amap.com/api/javascript-api-v2/summary/)
+- [高德安全密钥配置](https://lbs.amap.com/api/javascript-api-v2/guide/abc/jscode)
+
+高德应用应创建 Web 端 JavaScript API Key。本机演示时，把本地开发地址加入相应安全配置；公网部署时必须改为正式域名限制。
+
+`.env` 已被 `.gitignore` 忽略，不要把真实密钥提交到仓库。
+
+## 运行
+
+```powershell
 python app.py
 ```
 
-启动后打开：
+打开：
 
 ```text
 http://127.0.0.1:5000/
 ```
 
-## 测试首页
+选择标签或输入心情后生成路线。展开任意候选路线时，页面才会加载高德地图并请求该路线的步行规划。
 
-1. 打开 `http://127.0.0.1:5000/`。
-2. 点击一个或多个体验标签或心境标签，例如“一个人静静”“疗愈”。
-3. 在输入框中填写心情描述，例如“今天想一个人慢慢走，不赶路”。
-4. 点击“生成推荐”。
-5. 页面应展示 2-3 条候选路线；点击候选路线可展开推荐理由、点位列表和 mock 剧本。
+## 接口响应
 
-## 测试接口
+`POST /api/generate-script` 保持原请求格式：
 
-PowerShell:
+```json
+{
+  "selected_tags": ["想一个人静静"],
+  "user_text": "今天有点累，想慢慢走",
+  "profile_answers": {
+    "pace": "slow_stop"
+  }
+}
+```
+
+响应新增：
+
+- `intent`：心情摘要、模型推断的体验/心境标签和处理来源。
+- `routes[].script_source`：`qwen` 或 `fallback`。
+
+原有的 `routes`、`route`、`script`、`spots` 等字段继续保留。
+
+## 本地回退与故障排查
+
+- 没有配置 `QWEN_API_KEY`：继续使用本地规则推荐和 Excel 拼接文案，`script_source` 为 `fallback`。
+- 千问超时、返回非法 JSON 或漏掉部分路线：仅对应文案使用本地回退，不影响路线数据。
+- 没有配置 `AMAP_JS_KEY`：路线与点位列表正常展示，地图区域显示配置提示。
+- 某一段步行规划失败：该段使用虚线连接，其余成功路段继续展示。
+- 地图脚本或坐标转换失败：点位列表和 AI 文案仍然保留。
+- 若旧虚拟环境因项目路径变化无法启动，请删除后重新执行“安装”步骤创建环境。
+
+## 测试
+
+测试不会请求真实千问或高德服务，外部调用均使用测试替身：
 
 ```powershell
-Invoke-RestMethod `
-  -Uri "http://127.0.0.1:5000/api/recommend-routes" `
-  -Method Post `
-  -ContentType "application/json" `
-  -Body '{"selected_tags":["想一个人静静"],"user_text":"今天想一个人慢慢走"}'
-```
-
-curl:
-
-```bash
-curl -X POST http://127.0.0.1:5000/api/recommend-routes \
-  -H "Content-Type: application/json" \
-  -d '{"selected_tags":["想一个人静静"],"user_text":"今天想一个人慢慢走"}'
-```
-
-预期返回 JSON 中包含 `routes` 字段，并且“武康路书香独处线”会排在前列。
-
-## 运行测试
-
-```bash
 python -m unittest discover -s tests
 ```
 
-## 后续计划
+真实密钥的端到端验收建议检查：
 
-- 扩展更多上海路线和真实点位数据。
-- 优化情绪标签与文本关键词匹配策略。
-- 接入真实大模型 API，用于生成更有氛围的旅行文案。
-- 接入地图服务，展示路线点位和连线。
+1. 返回三条候选路线，且 `intent.source` 为 `qwen`。
+2. 至少一条路线的 `script_source` 为 `qwen`。
+3. 展开路线后出现编号点位、道路级步行折线、距离和预计时间。
+4. 切换或关闭路线详情后旧地图被销毁。
+
+## 主要文件
+
+- `app.py`：Flask 接口、配置注入和服务编排。
+- `services/qwen_service.py`：千问 OpenAI 兼容调用、JSON 校验和回退。
+- `services/recommender.py`：Excel 规则推荐及模型推断标签的低权重融合。
+- `services/excel_data.py`：读取 `上海路线数据.xlsx`。
+- `static/js/main.js`：推荐交互与高德地图步行路线展示。
+- `tests/`：推荐、API、千问服务、地图前端和配置测试。

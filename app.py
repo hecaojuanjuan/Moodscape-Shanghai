@@ -1,17 +1,36 @@
+import os
+
 from flask import Flask, jsonify, render_template, request
 
 from services.recommender import load_mindset_tags, load_tags, recommend_route, recommend_routes
+from services.qwen_service import QwenService
+
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
+
+if load_dotenv:
+    load_dotenv()
 
 
 NEEDS_INPUT_MESSAGE = "请在左侧选择标签，或者写入你的心情状态。"
 
 
 app = Flask(__name__)
+qwen_service = QwenService()
 
 
 @app.get("/")
 def index():
-    return render_template("index.html")
+    return render_template(
+        "index.html",
+        frontend_config={
+            "amapJsKey": os.getenv("AMAP_JS_KEY", ""),
+            "amapSecurityJsCode": os.getenv("AMAP_SECURITY_JS_CODE", ""),
+        },
+    )
 
 
 @app.get("/api/tags")
@@ -31,14 +50,20 @@ def generate_script_api():
     if _needs_current_input(selected_tags, user_text):
         return jsonify(_needs_input_response(include_script=True))
 
+    intent = _analyze_intent(user_text)
     routes = recommend_routes(
         selected_tags=selected_tags,
         user_text=user_text,
         profile_answers=profile_answers,
+        inferred_experience_tags=intent["inferred_experience_tags"],
+        inferred_mindset_tags=intent["inferred_mindset_tags"],
         limit=3,
     )
+    generated_scripts = _generate_route_scripts(routes, user_text, intent)
     for route in routes:
-        route["script"] = generate_excel_script(route)
+        generated_script = generated_scripts.get(route.get("route_id"))
+        route["script"] = generated_script or generate_excel_script(route)
+        route["script_source"] = "qwen" if generated_script else "fallback"
 
     first_route = routes[0] if routes else {}
     return jsonify(
@@ -52,6 +77,7 @@ def generate_script_api():
             "matched_mindsets": first_route.get("matched_mindsets", []),
             "recommendation_reason": first_route.get("match_reason", ""),
             "spots": first_route.get("spots", []),
+            "intent": intent,
         }
     )
 
@@ -112,9 +138,43 @@ def _needs_input_response(include_script=False):
                 "matched_mindsets": [],
                 "recommendation_reason": "",
                 "spots": [],
+                "intent": _fallback_intent(""),
             }
         )
     return response
+
+
+def _analyze_intent(user_text):
+    experience_tags = [
+        tag["emotion_tag"]
+        for tag in load_tags()
+        if tag.get("emotion_tag")
+    ]
+    mindset_tags = load_mindset_tags()
+    try:
+        return qwen_service.analyze_intent(
+            user_text,
+            allowed_experience_tags=experience_tags,
+            allowed_mindset_tags=mindset_tags,
+        )
+    except Exception:
+        return _fallback_intent(user_text)
+
+
+def _generate_route_scripts(routes, user_text, intent):
+    try:
+        return qwen_service.generate_route_scripts(routes, user_text, intent)
+    except Exception:
+        return {}
+
+
+def _fallback_intent(user_text):
+    return {
+        "summary": str(user_text or "").strip()[:80],
+        "inferred_experience_tags": [],
+        "inferred_mindset_tags": [],
+        "source": "fallback",
+    }
 
 
 def generate_excel_script(route):

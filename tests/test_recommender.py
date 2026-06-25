@@ -6,7 +6,13 @@ from unittest.mock import patch
 from openpyxl import Workbook
 
 from services.excel_data import load_excel_data
-from services.recommender import load_routes, load_tags, recommend_route, recommend_routes
+from services.recommender import (
+    _experience_tag_score,
+    load_routes,
+    load_tags,
+    recommend_route,
+    recommend_routes,
+)
 
 
 class RecommenderTest(unittest.TestCase):
@@ -93,6 +99,39 @@ class RecommenderTest(unittest.TestCase):
         self.assertIn("想一个人静静", routes[0]["matched_tags"])
         self.assertIn("武康大楼", routes[0]["match_reason"])
         self.assertIn("文学故居", routes[0]["suggested_card_copy"])
+
+    def test_selected_tag_score_outweighs_qwen_inferred_tag_score(self):
+        data = load_excel_data()
+        route = next(route for route in data["routes"] if route["route_id"] == "R03")
+        mapping_by_pair = {
+            (mapping["emotion_tag"], mapping["route_id"]): mapping
+            for mapping in data["mappings"]
+        }
+
+        selected_score, _ = _experience_tag_score(
+            route,
+            "想一个人静静",
+            mapping_by_pair,
+            selected=True,
+        )
+        inferred_score, _ = _experience_tag_score(
+            route,
+            "想一个人静静",
+            mapping_by_pair,
+            selected=False,
+        )
+
+        self.assertGreater(selected_score, inferred_score)
+
+    def test_qwen_inferred_tags_participate_with_text_match_weight(self):
+        routes = recommend_routes(
+            selected_tags=[],
+            inferred_experience_tags=["想被夜景治愈"],
+            user_text="这是一句不会命中 Excel 关键词的描述",
+        )
+
+        self.assertEqual(routes[0]["route_id"], "R01")
+        self.assertIn("想被夜景治愈", routes[0]["matched_tags"])
 
     def test_user_text_matches_only_excel_fields(self):
         routes = recommend_routes(selected_tags=[], user_text="低噪音 慢节奏 可独处 可停留")

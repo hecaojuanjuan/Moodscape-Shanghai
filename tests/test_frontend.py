@@ -49,6 +49,21 @@ class FrontendTest(unittest.TestCase):
         self.assertIn("profile_answers: collectProfileAnswers()", script)
         self.assertIn("请在左侧选择标签，或者写入你的心情状态。", script)
         self.assertIn("window.alert", script)
+        self.assertIn("window.MOODSCAPE_CONFIG", html)
+        self.assertIn("loadAmapScript", script)
+        self.assertIn("let amapLoadPromise = null", script)
+        self.assertIn("window._AMapSecurityConfig", script)
+        self.assertIn("webapi.amap.com/maps?v=2.0", script)
+        self.assertIn("AMap.convertFrom", script)
+        self.assertIn("new AMap.Walking", script)
+        self.assertIn("destroyActiveMap", script)
+        self.assertIn('lineOptions.strokeStyle = "dashed"', script)
+        self.assertIn("renderRouteMap", script)
+        self.assertIn(
+            'catch (error) {\n        if (renderId !== activeMapRenderId) {\n          return;\n        }\n        failedSegments += 1;',
+            script,
+        )
+        self.assertNotIn("map-placeholder", script)
 
     def test_runtime_code_does_not_hardcode_travel_data_sources(self):
         recommender = (PROJECT_ROOT / "services" / "recommender.py").read_text(encoding="utf-8")
@@ -63,6 +78,25 @@ class FrontendTest(unittest.TestCase):
         self.assertNotIn("上海情绪路线", app)
         self.assertNotIn("这条路线适合此刻的你", app)
         self.assertNotIn("适合一个人安静停留", script)
+
+    def test_map_configuration_is_rendered_from_server_environment(self):
+        import os
+        from unittest.mock import patch
+
+        from app import app
+
+        with patch.dict(
+            os.environ,
+            {
+                "AMAP_JS_KEY": "test-amap-key",
+                "AMAP_SECURITY_JS_CODE": "test-security-code",
+            },
+        ):
+            response = app.test_client().get("/")
+
+        html = response.get_data(as_text=True)
+        self.assertIn('"amapJsKey": "test-amap-key"', html)
+        self.assertIn('"amapSecurityJsCode": "test-security-code"', html)
 
 
 if __name__ == "__main__":

@@ -40,26 +40,60 @@ def load_mindset_tags():
     return list(load_excel_data()["mindset_tags"])
 
 
-def recommend_route(selected_tags=None, user_text="", profile_answers=None, limit=3):
+def recommend_route(
+    selected_tags=None,
+    user_text="",
+    profile_answers=None,
+    inferred_experience_tags=None,
+    inferred_mindset_tags=None,
+    limit=3,
+):
     routes = recommend_routes(
         selected_tags=selected_tags,
         user_text=user_text,
         profile_answers=profile_answers,
+        inferred_experience_tags=inferred_experience_tags,
+        inferred_mindset_tags=inferred_mindset_tags,
         limit=limit,
     )
     return routes[0] if routes else {}
 
 
-def recommend_routes(selected_tags=None, user_text="", profile_answers=None, limit=3):
+def recommend_routes(
+    selected_tags=None,
+    user_text="",
+    profile_answers=None,
+    inferred_experience_tags=None,
+    inferred_mindset_tags=None,
+    limit=3,
+):
     data = load_excel_data()
     selected = _normalize_selected_tags(selected_tags)
     user_text = user_text if isinstance(user_text, str) else ""
-    if not selected and not user_text.strip():
+    inferred_experience_tags = _normalize_inferred_tags(
+        inferred_experience_tags,
+        {tag["emotion_tag"] for tag in data["tags"]},
+    )
+    inferred_mindset_tags = _normalize_inferred_tags(
+        inferred_mindset_tags,
+        set(data["mindset_tags"]),
+    )
+    if not selected and not user_text.strip() and not inferred_experience_tags and not inferred_mindset_tags:
         return []
 
     selected_experience_tags, selected_mindsets = _split_selected_tags(selected, data)
     text_matched_tags = _match_tags_from_text(user_text, data)
     text_matched_mindsets = _match_mindsets_from_text(user_text, text_matched_tags, data)
+    text_matched_tags = _merge_inferred_tags(
+        text_matched_tags,
+        inferred_experience_tags,
+        selected_experience_tags,
+    )
+    text_matched_mindsets = _merge_inferred_tags(
+        text_matched_mindsets,
+        inferred_mindset_tags,
+        selected_mindsets,
+    )
     user_profile = build_user_profile_vector(profile_answers)
     possible_score = _query_possible_score(
         selected_experience_tags,
@@ -159,6 +193,27 @@ def _normalize_selected_tags(selected_tags):
         if isinstance(tag, str) and tag.strip() and tag.strip() not in normalized:
             normalized.append(tag.strip())
     return normalized
+
+
+def _normalize_inferred_tags(inferred_tags, allowed_tags):
+    if not isinstance(inferred_tags, list):
+        return []
+    normalized = []
+    for tag in inferred_tags:
+        if isinstance(tag, str):
+            clean_tag = tag.strip()
+            if clean_tag in allowed_tags and clean_tag not in normalized:
+                normalized.append(clean_tag)
+    return normalized
+
+
+def _merge_inferred_tags(text_tags, inferred_tags, selected_tags):
+    merged = list(text_tags)
+    selected = set(selected_tags)
+    for tag in inferred_tags:
+        if tag not in selected:
+            _append_unique(merged, tag)
+    return merged
 
 
 def _split_selected_tags(selected, data):

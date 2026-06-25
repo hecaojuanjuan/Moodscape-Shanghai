@@ -88,6 +88,9 @@
       </section>
     </main>
 
+    <script>
+      window.MOODSCAPE_CONFIG = {{ frontend_config | tojson }};
+    </script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
   </body>
 </html>

@@ -24,6 +24,7 @@ const tagGrid = document.querySelector("#tagGrid");
 const mindsetGrid = document.querySelector("#mindsetGrid");
 const needsInputMessage = "请在左侧选择标签，或者写入你的心情状态。";
 const profileStorageKey = "moodscapeProfileAnswers";
+const appConfig = window.MOODSCAPE_CONFIG || {};
 
 const profileQuestions = [
   {
@@ -90,6 +91,9 @@ let expandedRouteIndex = null;
 let profileAnswers = {};
 let profileDraftAnswers = {};
 let profileStepIndex = 0;
+let amapLoadPromise = null;
+let activeMap = null;
+let activeMapRenderId = 0;
 
 loadTags();
 initProfileGate();
@@ -130,6 +134,7 @@ recommendForm.addEventListener("submit", async (event) => {
     }
 
     currentRoutes = data.routes || [];
+    destroyActiveMap();
     expandedRouteIndex = null;
     renderRouteOptions(currentRoutes);
     statusText.textContent = "已生成候选路线。";
@@ -425,6 +430,10 @@ function renderRouteOptions(routes) {
   results.querySelectorAll(".route-close-button").forEach((button) => {
     button.addEventListener("click", closeRouteDetail);
   });
+
+  if (expandedRouteIndex !== null && routes[expandedRouteIndex]) {
+    renderRouteMap(routes[expandedRouteIndex], expandedRouteIndex);
+  }
 }
 
 function renderRouteOption(route, index, isExpanded) {
@@ -458,12 +467,14 @@ function renderRouteOption(route, index, isExpanded) {
 }
 
 function toggleRouteDetail(index) {
+  destroyActiveMap();
   expandedRouteIndex = expandedRouteIndex === index ? null : index;
   renderRouteOptions(currentRoutes);
 }
 
 function closeRouteDetail(event) {
   event.stopPropagation();
+  destroyActiveMap();
   expandedRouteIndex = null;
   renderRouteOptions(currentRoutes);
 }
@@ -508,22 +519,218 @@ function renderRouteDetail(route, index) {
       </section>
 
       <section class="route-section script-box">
-        <h3>Mock AI 旅游剧本</h3>
+        <div class="section-heading-row">
+          <h3>AI 旅游剧本</h3>
+          <span>${route.script_source === "qwen" ? "千问生成" : "本地回退"}</span>
+        </div>
         <p>${escapeHtml(route.script)}</p>
       </section>
 
-      <section class="map-placeholder" aria-label="地图预留区域">
-        <div class="map-grid"></div>
-        <div class="map-line"></div>
-        <div class="map-pin pin-one"></div>
-        <div class="map-pin pin-two"></div>
-        <div class="map-pin pin-three"></div>
-        <div class="map-copy">
-          <h3>地图预留区域</h3>
+      <section class="route-map-panel" aria-label="真实步行路线">
+        <div class="map-heading">
+          <div>
+            <h3>真实步行路线</h3>
+            <p id="routeMapStatus-${index}" aria-live="polite">正在加载高德地图...</p>
+          </div>
         </div>
+        <div class="route-map" id="routeMap-${index}"></div>
       </section>
     </div>
   `;
+}
+
+async function renderRouteMap(route, index) {
+  const mapContainer = document.querySelector(`#routeMap-${index}`);
+  const mapStatus = document.querySelector(`#routeMapStatus-${index}`);
+  if (!mapContainer || !mapStatus) {
+    return;
+  }
+
+  const spotsWithCoordinates = (route.spots || []).filter(
+    (spot) => Number.isFinite(spot.lng) && Number.isFinite(spot.lat),
+  );
+  if (spotsWithCoordinates.length < 2) {
+    mapStatus.textContent = "有效坐标不足，暂时无法规划步行路线。";
+    mapContainer.classList.add("has-map-error");
+    return;
+  }
+  if (!appConfig.amapJsKey) {
+    mapStatus.textContent = "尚未配置高德地图 Key，请在 .env 中填写 AMAP_JS_KEY。";
+    mapContainer.classList.add("has-map-error");
+    return;
+  }
+
+  const renderId = ++activeMapRenderId;
+  try {
+    const AMap = await loadAmapScript();
+    if (renderId !== activeMapRenderId) {
+      return;
+    }
+
+    const sourcePositions = spotsWithCoordinates.map((spot) => [spot.lng, spot.lat]);
+    const positions = await convertWgs84Positions(AMap, sourcePositions);
+    if (renderId !== activeMapRenderId) {
+      return;
+    }
+
+    activeMap = new AMap.Map(mapContainer, {
+      zoom: 13,
+      viewMode: "2D",
+      mapStyle: "amap://styles/normal",
+    });
+    addNumberedMarkers(AMap, activeMap, spotsWithCoordinates, positions);
+
+    let totalDistance = 0;
+    let totalDuration = 0;
+    let failedSegments = 0;
+    for (let segmentIndex = 0; segmentIndex < positions.length - 1; segmentIndex += 1) {
+      const start = positions[segmentIndex];
+      const end = positions[segmentIndex + 1];
+      try {
+        const segment = await planWalkingSegment(AMap, start, end);
+        if (renderId !== activeMapRenderId) {
+          return;
+        }
+        totalDistance += segment.distance;
+        totalDuration += segment.duration;
+        drawRouteLine(AMap, activeMap, segment.path, false);
+      } catch (error) {
+        if (renderId !== activeMapRenderId) {
+          return;
+        }
+        failedSegments += 1;
+        drawRouteLine(AMap, activeMap, [start, end], true);
+      }
+    }
+
+    activeMap.setFitView();
+    const missingCoordinates = (route.spots || []).length - spotsWithCoordinates.length;
+    const statusParts = [];
+    if (totalDistance > 0) {
+      statusParts.push(`步行约 ${(totalDistance / 1000).toFixed(1)} 公里`);
+    }
+    if (totalDuration > 0) {
+      statusParts.push(`约 ${Math.max(1, Math.round(totalDuration / 60))} 分钟`);
+    }
+    if (failedSegments > 0) {
+      statusParts.push(`${failedSegments} 段未获取道路规划，已用虚线连接`);
+    }
+    if (missingCoordinates > 0) {
+      statusParts.push(`${missingCoordinates} 个点位缺少坐标`);
+    }
+    mapStatus.textContent = statusParts.join(" · ") || "已显示路线点位。";
+  } catch (error) {
+    if (renderId !== activeMapRenderId) {
+      return;
+    }
+    mapStatus.textContent = `地图暂时无法加载：${error.message}`;
+    mapContainer.classList.add("has-map-error");
+  }
+}
+
+function loadAmapScript() {
+  if (window.AMap) {
+    return Promise.resolve(window.AMap);
+  }
+  if (amapLoadPromise) {
+    return amapLoadPromise;
+  }
+  if (!appConfig.amapJsKey) {
+    return Promise.reject(new Error("缺少 AMAP_JS_KEY"));
+  }
+
+  window._AMapSecurityConfig = {
+    securityJsCode: appConfig.amapSecurityJsCode || "",
+  };
+  amapLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(appConfig.amapJsKey)}&plugin=AMap.Walking`;
+    script.async = true;
+    script.onload = () => resolve(window.AMap);
+    script.onerror = () => {
+      amapLoadPromise = null;
+      reject(new Error("高德地图脚本加载失败"));
+    };
+    document.head.appendChild(script);
+  });
+  return amapLoadPromise;
+}
+
+function convertWgs84Positions(AMap, positions) {
+  return new Promise((resolve, reject) => {
+    AMap.convertFrom(positions, "gps", (status, result) => {
+      if (status === "complete" && result.info === "ok" && result.locations?.length) {
+        resolve(result.locations);
+        return;
+      }
+      reject(new Error("点位坐标转换失败"));
+    });
+  });
+}
+
+function addNumberedMarkers(AMap, map, spots, positions) {
+  positions.forEach((position, index) => {
+    const marker = new AMap.Marker({
+      map,
+      position,
+      title: spots[index].name,
+      content: `<div class="amap-number-marker">${index + 1}</div>`,
+      offset: new AMap.Pixel(-15, -15),
+    });
+    marker.setMap(map);
+  });
+}
+
+function planWalkingSegment(AMap, start, end) {
+  return new Promise((resolve, reject) => {
+    const walking = new AMap.Walking({
+      hideMarkers: true,
+      autoFitView: false,
+    });
+    walking.search(start, end, (status, result) => {
+      const route = result?.routes?.[0];
+      if (status !== "complete" || !route) {
+        reject(new Error("步行路线规划失败"));
+        return;
+      }
+
+      const path = [];
+      (route.steps || []).forEach((step) => {
+        (step.path || []).forEach((point) => path.push(point));
+      });
+      resolve({
+        distance: Number(route.distance) || 0,
+        duration: Number(route.time) || 0,
+        path: path.length ? path : [start, end],
+      });
+    });
+  });
+}
+
+function drawRouteLine(AMap, map, path, isFallback) {
+  const lineOptions = {
+    map,
+    path,
+    strokeColor: isFallback ? "#be496d" : "#0f766e",
+    strokeOpacity: 0.85,
+    strokeWeight: isFallback ? 5 : 7,
+    lineJoin: "round",
+  };
+  if (isFallback) {
+    lineOptions.strokeStyle = "dashed";
+    lineOptions.strokeDasharray = [10, 8];
+  } else {
+    lineOptions.strokeStyle = "solid";
+  }
+  return new AMap.Polyline(lineOptions);
+}
+
+function destroyActiveMap() {
+  activeMapRenderId += 1;
+  if (activeMap) {
+    activeMap.destroy();
+    activeMap = null;
+  }
 }
 
 function setLoading(isLoading) {
