@@ -81,21 +81,43 @@ class QwenService:
 
         route_payloads = [_route_prompt_payload(route) for route in routes]
         request_payload = {
-            "task": "为候选上海路线分别生成简洁、有氛围但事实准确的旅行剧本。",
+            "task": "为候选上海路线分别生成城市散文感的分幕路线剧本，供用户出发前预览。",
             "user_text": str(user_text or "").strip(),
             "intent": intent or {},
             "routes": route_payloads,
             "rules": [
-                "每个 route_id 最多返回一条剧本。",
+                "每个 route_id 最多返回一组剧本。",
                 "只能使用输入中提供的路线和点位。",
-                "不得新增景点、改变点位顺序或虚构开放时间、票务信息。",
-                "每条剧本使用中文，约120至220字。",
+                "不得新增景点、改变点位顺序或虚构开放时间、票务信息、历史事件。",
+                "整体使用第二人称、城市散文感、出发前预览语气，不写现场导航命令。",
+                "script 是兼容旧展示的一段路线摘要，约160至240字。",
+                "script_sections 必须包含 opening、按输入点位顺序排列的 spot 分幕、closing。",
+                "spot 分幕只能引用对应点位事实，可写感官与心境，但不能添加未提供事实。",
             ],
             "output_schema": {
                 "scripts": [
                     {
                         "route_id": "输入中的 route_id",
-                        "script": "该路线的旅行剧本",
+                        "script": "兼容旧展示的一段路线剧本",
+                        "script_sections": [
+                            {
+                                "type": "opening",
+                                "title": "开场",
+                                "text": "进入路线前的情绪开场",
+                            },
+                            {
+                                "type": "spot",
+                                "spot_id": "输入中的 spot_id",
+                                "spot_name": "输入中的 spot_name",
+                                "title": "第一幕｜点位名",
+                                "text": "该点位的预览分幕",
+                            },
+                            {
+                                "type": "closing",
+                                "title": "收束",
+                                "text": "走完路线后的情绪收束",
+                            },
+                        ],
                     }
                 ]
             },
@@ -104,17 +126,18 @@ class QwenService:
         try:
             result = self._request_json(
                 system_prompt=(
-                    "你是上海城市旅行文案编辑。必须严格依据输入事实并返回 JSON 对象，"
-                    "不得输出 Markdown。"
+                    "你是上海城市旅行剧本编辑。必须严格依据输入事实并返回 JSON 对象，"
+                    "不得输出 Markdown，不得把路线写成营销广告或景点百科。"
                 ),
                 user_prompt=json.dumps(request_payload, ensure_ascii=False),
-                max_tokens=2400,
+                max_tokens=3600,
+                temperature=0.45,
             )
         except Exception:
             return {}
 
-        allowed_ids = {
-            route.get("route_id")
+        allowed_routes = {
+            route.get("route_id"): route
             for route in routes
             if isinstance(route, dict) and route.get("route_id")
         }
@@ -127,12 +150,14 @@ class QwenService:
             if not isinstance(item, dict):
                 continue
             route_id = _clean_text(item.get("route_id"))
-            script = _clean_text(item.get("script"))
-            if route_id in allowed_ids and script and route_id not in scripts:
-                scripts[route_id] = script
+            if route_id not in allowed_routes or route_id in scripts:
+                continue
+            script_payload = _clean_script_payload(item, allowed_routes[route_id])
+            if script_payload:
+                scripts[route_id] = script_payload
         return scripts
 
-    def _request_json(self, system_prompt, user_prompt, max_tokens):
+    def _request_json(self, system_prompt, user_prompt, max_tokens, temperature=0.2):
         response = self._get_client().chat.completions.create(
             model=self.model,
             messages=[
@@ -140,7 +165,7 @@ class QwenService:
                 {"role": "user", "content": user_prompt},
             ],
             response_format={"type": "json_object"},
-            temperature=0.2,
+            temperature=temperature,
             max_tokens=max_tokens,
             timeout=self.timeout_seconds,
         )
@@ -189,17 +214,122 @@ def _route_prompt_payload(route):
     return {
         "route_id": route.get("route_id", ""),
         "route_name": route.get("route_name", ""),
+        "route_intro_user_facing": route.get("route_intro_user_facing", ""),
+        "suitable_mood": route.get("suitable_mood", ""),
+        "estimated_time": route.get("estimated_time", ""),
+        "budget_level": route.get("budget_level", ""),
+        "route_spots": route.get("route_spots", ""),
+        "ai_script_angle": route.get("ai_script_angle", ""),
         "match_reason": route.get("match_reason", ""),
+        "matched_tags": route.get("matched_tags", []),
+        "matched_mindsets": route.get("matched_mindsets", []),
+        "dominant_mindsets": route.get("dominant_mindsets", []),
         "spots": [
             {
+                "spot_id": spot.get("spot_id", ""),
+                "spot_order": spot.get("spot_order", ""),
                 "name": spot.get("name", ""),
                 "description": spot.get("description", ""),
+                "district": spot.get("district", ""),
                 "open_time": spot.get("open_time", ""),
                 "ticket_reservation": spot.get("ticket_reservation", ""),
+                "feedback_keywords": spot.get("feedback_keywords", []),
+                "address": spot.get("address", ""),
             }
             for spot in route.get("spots", [])
         ],
     }
+
+
+def _clean_script_payload(item, route):
+    script = _clean_text(item.get("script"))
+    sections = _clean_script_sections(item.get("script_sections"), route)
+    if not script or not sections:
+        return None
+    return {
+        "script": script,
+        "script_sections": sections,
+    }
+
+
+def _clean_script_sections(raw_sections, route):
+    if not isinstance(raw_sections, list):
+        return []
+
+    allowed_spots = route.get("spots", [])
+    spots_by_id = {
+        _clean_text(spot.get("spot_id")): spot
+        for spot in allowed_spots
+        if _clean_text(spot.get("spot_id"))
+    }
+    spots_by_name = {
+        _clean_text(spot.get("name")): spot
+        for spot in allowed_spots
+        if _clean_text(spot.get("name"))
+    }
+    expected_spot_keys = [
+        _route_spot_key(spot)
+        for spot in allowed_spots
+        if _route_spot_key(spot)
+    ]
+
+    sections = []
+    section_spot_keys = []
+    has_opening = False
+    has_spot = False
+    has_closing = False
+    for section in raw_sections:
+        if not isinstance(section, dict):
+            continue
+        section_type = _clean_text(section.get("type"))
+        if section_type not in {"opening", "spot", "closing"}:
+            continue
+
+        title = _clean_text(section.get("title"))
+        text = _clean_text(section.get("text"))
+        if not title or not text:
+            continue
+
+        clean_section = {
+            "type": section_type,
+            "title": title,
+            "text": text,
+        }
+        if section_type == "spot":
+            spot_id = _clean_text(section.get("spot_id"))
+            spot_name = _clean_text(section.get("spot_name"))
+            matched_spot = None
+            if spot_id:
+                matched_spot = spots_by_id.get(spot_id)
+            if not matched_spot and spot_name:
+                matched_spot = spots_by_name.get(spot_name)
+            if not matched_spot:
+                continue
+            clean_section["spot_id"] = _clean_text(matched_spot.get("spot_id"))
+            clean_section["spot_name"] = _clean_text(matched_spot.get("name"))
+            section_spot_keys.append(_route_spot_key(matched_spot))
+            has_spot = True
+        elif section_type == "opening":
+            has_opening = True
+        elif section_type == "closing":
+            has_closing = True
+        sections.append(clean_section)
+
+    if not (has_opening and has_spot and has_closing):
+        return []
+    if expected_spot_keys and section_spot_keys != expected_spot_keys:
+        return []
+    return sections
+
+
+def _route_spot_key(spot):
+    spot_id = _clean_text(spot.get("spot_id"))
+    if spot_id:
+        return f"id:{spot_id}"
+    spot_name = _clean_text(spot.get("name"))
+    if spot_name:
+        return f"name:{spot_name}"
+    return ""
 
 
 def _strip_code_fence(value):

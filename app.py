@@ -62,7 +62,12 @@ def generate_script_api():
     generated_scripts = _generate_route_scripts(routes, user_text, intent)
     for route in routes:
         generated_script = generated_scripts.get(route.get("route_id"))
-        route["script"] = generated_script or generate_excel_script(route)
+        if generated_script:
+            route["script"] = generated_script["script"]
+            route["script_sections"] = generated_script["script_sections"]
+        else:
+            route["script"] = generate_excel_script(route)
+            route["script_sections"] = generate_excel_script_sections(route)
         route["script_source"] = "qwen" if generated_script else "fallback"
 
     first_route = routes[0] if routes else {}
@@ -71,6 +76,7 @@ def generate_script_api():
             "routes": routes,
             "route": first_route,
             "script": first_route.get("script", ""),
+            "script_sections": first_route.get("script_sections", []),
             "needs_input": False,
             "message": "",
             "matched_tags": first_route.get("matched_tags", []),
@@ -134,6 +140,7 @@ def _needs_input_response(include_script=False):
             {
                 "route": {},
                 "script": "",
+                "script_sections": [],
                 "matched_tags": [],
                 "matched_mindsets": [],
                 "recommendation_reason": "",
@@ -211,8 +218,93 @@ def generate_excel_script(route):
     )
 
 
+def generate_excel_script_sections(route):
+    if not route:
+        return []
+
+    route_name = _script_part(route.get("route_name", ""))
+    route_intro = _script_part(route.get("route_intro_user_facing", ""))
+    script_angle = _script_part(route.get("ai_script_angle", ""))
+    match_reason = _script_part(route.get("match_reason", ""))
+    opening_text = "。".join(
+        part
+        for part in [
+            f"这条路线会从{route_name}展开" if route_name else "",
+            route_intro,
+            script_angle,
+            match_reason,
+        ]
+        if part
+    )
+    sections = [
+        {
+            "type": "opening",
+            "title": "开场",
+            "text": opening_text or "这条路线会把此刻的心情，慢慢带进上海的街道里。",
+        }
+    ]
+
+    for index, spot in enumerate(route.get("spots", []), start=1):
+        spot_name = _script_part(spot.get("name", ""))
+        description = _script_part(spot.get("description", ""))
+        keywords = "、".join(spot.get("feedback_keywords", []))
+        practical_info = " / ".join(
+            part
+            for part in [
+                spot.get("open_time", ""),
+                spot.get("ticket_reservation", ""),
+            ]
+            if part
+        )
+        text = "。".join(
+            part
+            for part in [
+                f"你会在{spot_name}停下来" if spot_name else "",
+                description,
+                f"这里的关键词是{keywords}" if keywords else "",
+                practical_info,
+            ]
+            if part
+        )
+        sections.append(
+            {
+                "type": "spot",
+                "spot_id": str(spot.get("spot_id", "")).strip(),
+                "spot_name": spot_name,
+                "title": f"{_section_number(index)}幕｜{spot_name}" if spot_name else f"{_section_number(index)}幕",
+                "text": text or "这一站适合放慢脚步，给路线留出一点停顿。",
+            }
+        )
+
+    closing_parts = [
+        route.get("route_spots", ""),
+        route.get("estimated_time", ""),
+        route.get("budget_level", ""),
+    ]
+    closing_detail = " / ".join(str(part).strip() for part in closing_parts if str(part or "").strip())
+    sections.append(
+        {
+            "type": "closing",
+            "title": "收束",
+            "text": (
+                f"走完这些点位后，{closing_detail}会成为这段上海预览的轮廓。"
+                if closing_detail
+                else "走完这些点位后，这段路线会把今天的心情收束成一段更安静的城市记忆。"
+            ),
+        }
+    )
+    return sections
+
+
 def _script_part(value):
     return str(value or "").strip().rstrip("。；; ")
+
+
+def _section_number(index):
+    numbers = ["零", "第一", "第二", "第三", "第四", "第五", "第六", "第七", "第八", "第九", "第十"]
+    if 0 < index < len(numbers):
+        return numbers[index]
+    return f"第{index}"
 
 
 if __name__ == "__main__":

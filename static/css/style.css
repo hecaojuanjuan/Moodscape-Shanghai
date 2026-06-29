@@ -584,6 +584,45 @@ textarea:focus,
   color: var(--accent-dark);
 }
 
+.script-section-list {
+  display: grid;
+  gap: 12px;
+}
+
+.script-section {
+  border-left: 3px solid rgba(15, 118, 110, 0.35);
+  padding-left: 12px;
+}
+
+.script-section-spot {
+  border-left-color: rgba(180, 83, 9, 0.55);
+}
+
+.script-section-closing {
+  border-left-color: rgba(190, 73, 109, 0.5);
+}
+
+.script-section-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.script-section-header strong {
+  color: var(--ink);
+}
+
+.script-section-header span {
+  border-radius: 999px;
+  background: rgba(180, 83, 9, 0.12);
+  color: #7c3f08;
+  padding: 3px 8px;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
 .section-heading-row,
 .map-heading {
   display: flex;

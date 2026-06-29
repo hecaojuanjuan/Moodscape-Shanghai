@@ -93,14 +93,54 @@ class QwenServiceTest(unittest.TestCase):
         self.assertEqual(intent["source"], "fallback")
         self.assertEqual(scripts, {})
 
-    def test_generate_route_scripts_ignores_unknown_and_missing_route_ids(self):
+    def test_generate_route_scripts_returns_structured_sections_and_filters_invalid_items(self):
         client = FakeClient(
             [
                 json.dumps(
                     {
                         "scripts": [
-                            {"route_id": "R01", "script": "从第一站开始慢慢走。"},
-                            {"route_id": "R99", "script": "这条路线并不存在。"},
+                            {
+                                "route_id": "R01",
+                                "script": "从第一站开始慢慢走，让城市的声音慢下来。",
+                                "script_sections": [
+                                    {
+                                        "type": "opening",
+                                        "title": "开场",
+                                        "text": "你会从第一站进入这条安静路线。",
+                                    },
+                                    {
+                                        "type": "spot",
+                                        "spot_id": "S01",
+                                        "spot_name": "第一站",
+                                        "title": "第一幕｜第一站",
+                                        "text": "先把脚步放慢，留意街角的安静。",
+                                    },
+                                    {
+                                        "type": "spot",
+                                        "spot_id": "S02",
+                                        "spot_name": "第二站",
+                                        "title": "第二幕｜第二站",
+                                        "text": "再把散步交给下一处可以停留的地方。",
+                                    },
+                                    {
+                                        "type": "closing",
+                                        "title": "收束",
+                                        "text": "最后把这段散步收进今天的余光里。",
+                                    },
+                                ],
+                            },
+                            {
+                                "route_id": "R02",
+                                "script": "这条路线没有合法分幕。",
+                                "script_sections": [],
+                            },
+                            {
+                                "route_id": "R99",
+                                "script": "这条路线并不存在。",
+                                "script_sections": [
+                                    {"type": "opening", "title": "开场", "text": "不存在。"}
+                                ],
+                            },
                         ]
                     },
                     ensure_ascii=False,
@@ -122,27 +162,187 @@ class QwenServiceTest(unittest.TestCase):
             },
         )
 
-        self.assertEqual(scripts, {"R01": "从第一站开始慢慢走。"})
+        self.assertEqual(
+            scripts,
+            {
+                "R01": {
+                    "script": "从第一站开始慢慢走，让城市的声音慢下来。",
+                    "script_sections": [
+                        {
+                            "type": "opening",
+                            "title": "开场",
+                            "text": "你会从第一站进入这条安静路线。",
+                        },
+                        {
+                            "type": "spot",
+                            "spot_id": "S01",
+                            "spot_name": "第一站",
+                            "title": "第一幕｜第一站",
+                            "text": "先把脚步放慢，留意街角的安静。",
+                        },
+                        {
+                            "type": "spot",
+                            "spot_id": "S02",
+                            "spot_name": "第二站",
+                            "title": "第二幕｜第二站",
+                            "text": "再把散步交给下一处可以停留的地方。",
+                        },
+                        {
+                            "type": "closing",
+                            "title": "收束",
+                            "text": "最后把这段散步收进今天的余光里。",
+                        },
+                    ],
+                }
+            },
+        )
         self.assertEqual(routes, original_routes)
+
+    def test_generate_route_scripts_prompt_includes_immersive_route_context(self):
+        client = FakeClient(
+            [
+                json.dumps(
+                    {
+                        "scripts": [
+                            {
+                                "route_id": "R01",
+                                "script": "从第一站开始慢慢走，让城市的声音慢下来。",
+                                "script_sections": [
+                                    {"type": "opening", "title": "开场", "text": "开场。"},
+                                    {
+                                        "type": "spot",
+                                        "spot_id": "S01",
+                                        "spot_name": "第一站",
+                                        "title": "第一幕｜第一站",
+                                        "text": "第一幕。",
+                                    },
+                                    {
+                                        "type": "spot",
+                                        "spot_id": "S02",
+                                        "spot_name": "第二站",
+                                        "title": "第二幕｜第二站",
+                                        "text": "第二幕。",
+                                    },
+                                    {"type": "closing", "title": "收束", "text": "收束。"},
+                                ],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+            ]
+        )
+        service = QwenService(api_key="test-key", client=client)
+
+        service.generate_route_scripts(
+            routes=[_route("R01", "测试路线")],
+            user_text="想安静散步",
+            intent={
+                "summary": "安静散步",
+                "inferred_experience_tags": ["想慢慢走不赶路"],
+                "inferred_mindset_tags": ["疗愈"],
+                "source": "qwen",
+            },
+        )
+
+        request = client.completions.requests[0]
+        user_prompt = request["messages"][1]["content"]
+        self.assertIn("城市散文感的分幕路线剧本", user_prompt)
+        self.assertIn("ai_script_angle", user_prompt)
+        self.assertIn("suitable_mood", user_prompt)
+        self.assertIn("feedback_keywords", user_prompt)
+
+    def test_generate_route_scripts_ignores_invalid_structured_response(self):
+        client = FakeClient(
+            [
+                json.dumps(
+                    {
+                        "scripts": [
+                            {
+                                "route_id": "R01",
+                                "script": "这条路线缺少合法分幕。",
+                                "script_sections": "not-a-list",
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+            ]
+        )
+        service = QwenService(api_key="test-key", client=client)
+
+        scripts = service.generate_route_scripts(
+            routes=[_route("R01", "路线一")],
+            user_text="想安静散步",
+            intent={"summary": "安静散步", "source": "qwen"},
+        )
+
+        self.assertEqual(scripts, {})
+
+    def test_generate_route_scripts_requires_all_route_spots_in_order(self):
+        client = FakeClient(
+            [
+                json.dumps(
+                    {
+                        "scripts": [
+                            {
+                                "route_id": "R01",
+                                "script": "这条路线漏掉了第二站。",
+                                "script_sections": [
+                                    {"type": "opening", "title": "开场", "text": "开场。"},
+                                    {
+                                        "type": "spot",
+                                        "spot_id": "S01",
+                                        "spot_name": "第一站",
+                                        "title": "第一幕｜第一站",
+                                        "text": "第一幕。",
+                                    },
+                                    {"type": "closing", "title": "收束", "text": "收束。"},
+                                ],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+            ]
+        )
+        service = QwenService(api_key="test-key", client=client)
+
+        scripts = service.generate_route_scripts(
+            routes=[_route("R01", "路线一")],
+            user_text="想安静散步",
+            intent={"summary": "安静散步", "source": "qwen"},
+        )
+
+        self.assertEqual(scripts, {})
 
 
 def _route(route_id, name):
     return {
         "route_id": route_id,
         "route_name": name,
+        "route_intro_user_facing": "适合慢慢预览的一条路线。",
+        "suitable_mood": "想独处、想散心",
+        "ai_script_angle": "一个人的城市信件",
+        "matched_tags": ["想一个人静静"],
+        "matched_mindsets": ["疗愈"],
         "match_reason": "符合此刻的心情",
         "spots": [
             {
+                "spot_id": "S01",
                 "name": "第一站",
                 "description": "安静的街角",
                 "open_time": "全天",
                 "ticket_reservation": "免费",
+                "feedback_keywords": ["安静", "慢走"],
             },
             {
+                "spot_id": "S02",
                 "name": "第二站",
                 "description": "适合散步",
                 "open_time": "全天",
                 "ticket_reservation": "免费",
+                "feedback_keywords": ["停留", "放松"],
             },
         ],
     }

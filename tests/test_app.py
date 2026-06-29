@@ -47,6 +47,15 @@ class AppTest(unittest.TestCase):
         self.assertIn("route_distance_km", first)
         self.assertIn("武康大楼", first["match_reason"])
         self.assertIn("武康大楼", first["script"])
+        self.assertIn("script_sections", first)
+        self.assertEqual(first["script_sections"][0]["type"], "opening")
+        self.assertEqual(first["script_sections"][-1]["type"], "closing")
+        self.assertTrue(
+            any(
+                section["type"] == "spot" and section["spot_name"] == "武康大楼"
+                for section in first["script_sections"]
+            )
+        )
         self.assertNotIn("给自己留一句", first["script"])
         self.assertGreaterEqual(len(first["spots"]), 3)
 
@@ -57,6 +66,8 @@ class AppTest(unittest.TestCase):
             self.assertIn("match_reason", route)
             self.assertIn("suggested_card_copy", route)
             self.assertIn("script", route)
+            self.assertIn("script_sections", route)
+            self.assertGreaterEqual(len(route["script_sections"]), 3)
             for spot in route["spots"]:
                 self.assertIn("spot_id", spot)
                 self.assertIn("name", spot)
@@ -81,7 +92,30 @@ class AppTest(unittest.TestCase):
             patch.object(
                 app_module.qwen_service,
                 "generate_route_scripts",
-                return_value={"R03": "这是一条由千问生成的真实路线文案。"},
+                return_value={
+                    "R03": {
+                        "script": "这是一条由千问生成的真实路线文案。",
+                        "script_sections": [
+                            {
+                                "type": "opening",
+                                "title": "开场",
+                                "text": "你从武康路的树影里进入这条路线。",
+                            },
+                            {
+                                "type": "spot",
+                                "spot_id": "S03-01",
+                                "spot_name": "武康大楼",
+                                "title": "第一幕｜武康大楼",
+                                "text": "先把视线交给武康大楼。",
+                            },
+                            {
+                                "type": "closing",
+                                "title": "收束",
+                                "text": "最后把这段安静带回今天。",
+                            },
+                        ],
+                    }
+                },
             ),
         ):
             client = app_module.app.test_client()
@@ -98,9 +132,13 @@ class AppTest(unittest.TestCase):
         self.assertEqual(data["intent"], intent)
         self.assertEqual(data["routes"][0]["route_id"], "R03")
         self.assertEqual(data["routes"][0]["script"], "这是一条由千问生成的真实路线文案。")
+        self.assertEqual(data["routes"][0]["script_sections"][1]["spot_name"], "武康大楼")
         self.assertEqual(data["routes"][0]["script_source"], "qwen")
         self.assertTrue(
             all(route["script_source"] == "fallback" for route in data["routes"][1:])
+        )
+        self.assertTrue(
+            all(route["script_sections"] for route in data["routes"][1:])
         )
 
     def test_qwen_intent_can_drive_ranking_without_changing_route_data(self):
@@ -153,6 +191,7 @@ class AppTest(unittest.TestCase):
         self.assertEqual(data["routes"], [])
         self.assertEqual(data["message"], "请在左侧选择标签，或者写入你的心情状态。")
         self.assertEqual(data["script"], "")
+        self.assertEqual(data["script_sections"], [])
 
     def test_recommend_routes_endpoint_returns_multiple_routes(self):
         from app import app

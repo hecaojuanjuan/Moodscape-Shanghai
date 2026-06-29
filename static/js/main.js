@@ -523,7 +523,7 @@ function renderRouteDetail(route, index) {
           <h3>AI 旅游剧本</h3>
           <span>${route.script_source === "qwen" ? "千问生成" : "本地回退"}</span>
         </div>
-        <p>${escapeHtml(route.script)}</p>
+        ${renderScriptContent(route)}
       </section>
 
       <section class="route-map-panel" aria-label="真实步行路线">
@@ -536,6 +536,39 @@ function renderRouteDetail(route, index) {
         <div class="route-map" id="routeMap-${index}"></div>
       </section>
     </div>
+  `;
+}
+
+function renderScriptContent(route) {
+  const sections = Array.isArray(route.script_sections)
+    ? route.script_sections.filter((section) => section && section.title && section.text)
+    : [];
+
+  if (!sections.length) {
+    return `<p>${escapeHtml(route.script)}</p>`;
+  }
+
+  return `
+    <div class="script-section-list">
+      ${sections.map((section) => renderScriptSection(section)).join("")}
+    </div>
+  `;
+}
+
+function renderScriptSection(section) {
+  const sectionType = ["opening", "spot", "closing"].includes(section.type) ? section.type : "note";
+  const spotName = sectionType === "spot" && section.spot_name
+    ? `<span>${escapeHtml(section.spot_name)}</span>`
+    : "";
+
+  return `
+    <article class="script-section script-section-${sectionType}">
+      <div class="script-section-header">
+        <strong>${escapeHtml(section.title)}</strong>
+        ${spotName}
+      </div>
+      <p>${escapeHtml(section.text)}</p>
+    </article>
   `;
 }
 
