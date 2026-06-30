@@ -542,28 +542,88 @@ function renderScriptContent(route) {
   const sections = Array.isArray(route.script_sections)
     ? route.script_sections.filter((section) => section && section.title && section.text)
     : [];
+  const openingSection = sections.find((section) => section.type === "opening");
+  const closingSection = [...sections].reverse().find((section) => section.type === "closing");
+  const spotSections = sections.filter((section) => section.type === "spot");
+  const scriptTitle = route.script_title || "沉浸式城市剧本";
+  const openingText = route.script_opening || openingSection?.text || "";
+  const roleText = route.script_role || "";
+  const closingText = route.script_closing || closingSection?.text || "";
+  const sensory = route.script_sensory && typeof route.script_sensory === "object"
+    ? route.script_sensory
+    : {};
 
-  if (!sections.length) {
+  if (!sections.length && !openingText && !roleText && !closingText) {
     return `<p>${escapeHtml(route.script)}</p>`;
   }
 
   return `
-    <div class="script-section-list">
-      ${sections.map((section) => renderScriptSection(section)).join("")}
+    <div class="script-story">
+      <h4 class="script-story-title">${escapeHtml(scriptTitle)}</h4>
+      ${renderScriptBlock("开场白", openingText)}
+      ${renderScriptBlock("角色设定", roleText)}
+      ${renderScriptScenes(spotSections, route)}
+      ${renderScriptSensory(sensory)}
+      ${renderScriptBlock("结尾收束", closingText)}
     </div>
   `;
 }
 
-function renderScriptSection(section) {
+function renderScriptBlock(label, text) {
+  if (!text) {
+    return "";
+  }
+
+  return `
+    <section class="script-story-block">
+      <h4>${escapeHtml(label)}</h4>
+      <p>${escapeHtml(text)}</p>
+    </section>
+  `;
+}
+
+function renderScriptScenes(spotSections, route) {
+  if (!spotSections.length) {
+    return renderScriptBlock("分幕路线", route.script || "");
+  }
+
+  return `
+    <section class="script-story-block">
+      <h4>分幕路线</h4>
+      <div class="script-section-list script-scene-list">
+        ${spotSections.map((section, index) => renderScriptScene(section, index)).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderScriptScene(section, index) {
   const sectionType = ["opening", "spot", "closing"].includes(section.type) ? section.type : "note";
-  const spotName = sectionType === "spot" && section.spot_name
-    ? `<span>${escapeHtml(section.spot_name)}</span>`
-    : "";
+  const location = section.location || section.spot_name;
+  const experience = section.experience || section.action_guide;
+  const emotion = section.emotion_shift || section.emotion_experience;
+  const meta = [
+    ["地点", location],
+    ["体验", experience],
+    ["情绪", emotion],
+  ].filter(([, value]) => value);
   const signals = [
     ["情绪体验", section.emotion_experience],
     ["行动引导", section.action_guide],
     ["场景画面", section.scene_image],
   ].filter(([, value]) => value);
+  const metaHtml = meta.length
+    ? `
+      <dl class="script-scene-meta">
+        ${meta.map(([label, value]) => `
+          <div>
+            <dt>${escapeHtml(label)}</dt>
+            <dd>${escapeHtml(value)}</dd>
+          </div>
+        `).join("")}
+      </dl>
+    `
+    : "";
   const signalsHtml = signals.length
     ? `
       <dl class="script-section-signals">
@@ -580,12 +640,40 @@ function renderScriptSection(section) {
   return `
     <article class="script-section script-section-${sectionType}">
       <div class="script-section-header">
-        <strong>${escapeHtml(section.title)}</strong>
-        ${spotName}
+        <strong>${escapeHtml(section.title || `第${index + 1}幕`)}</strong>
+        ${location ? `<span>${escapeHtml(location)}</span>` : ""}
       </div>
       <p>${escapeHtml(section.text)}</p>
+      ${metaHtml}
       ${signalsHtml}
     </article>
+  `;
+}
+
+function renderScriptSensory(sensory) {
+  const items = [
+    ["看到", sensory.see],
+    ["听到", sensory.hear],
+    ["闻到", sensory.smell],
+    ["做什么", sensory.do],
+  ].filter(([, value]) => value);
+
+  if (!items.length) {
+    return "";
+  }
+
+  return `
+    <section class="script-story-block">
+      <h4>感官描写</h4>
+      <dl class="script-sensory-grid">
+        ${items.map(([label, value]) => `
+          <div>
+            <dt>${escapeHtml(label)}</dt>
+            <dd>${escapeHtml(value)}</dd>
+          </div>
+        `).join("")}
+      </dl>
+    </section>
   `;
 }
 

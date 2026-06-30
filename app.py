@@ -62,13 +62,10 @@ def generate_script_api():
     generated_scripts = _generate_route_scripts(routes, user_text, intent)
     for route in routes:
         generated_script = generated_scripts.get(route.get("route_id"))
-        if generated_script:
-            route["script"] = generated_script["script"]
-            route["script_sections"] = generated_script["script_sections"]
-        else:
-            route["script_sections"] = generate_excel_script_sections(route, user_text, intent)
-            route["script"] = generate_excel_script(route, route["script_sections"])
-        route["script_source"] = "qwen" if generated_script else "fallback"
+        uses_qwen_script = _script_payload_is_complete(generated_script)
+        script_payload = generated_script if uses_qwen_script else generate_excel_script_payload(route, user_text, intent)
+        _apply_script_payload(route, script_payload)
+        route["script_source"] = "qwen" if uses_qwen_script else "fallback"
 
     first_route = routes[0] if routes else {}
     return jsonify(
@@ -184,7 +181,86 @@ def _fallback_intent(user_text):
     }
 
 
-def generate_excel_script(route, script_sections=None):
+SCRIPT_PAYLOAD_KEYS = (
+    "script",
+    "script_sections",
+    "script_title",
+    "script_opening",
+    "script_role",
+    "script_sensory",
+    "script_closing",
+)
+
+
+def _apply_script_payload(route, script_payload):
+    for key in SCRIPT_PAYLOAD_KEYS:
+        route[key] = script_payload.get(key, {} if key == "script_sensory" else ([] if key == "script_sections" else ""))
+
+
+def _script_payload_is_complete(script_payload):
+    if not isinstance(script_payload, dict):
+        return False
+    sensory = script_payload.get("script_sensory")
+    return all(
+        [
+            script_payload.get("script"),
+            script_payload.get("script_sections"),
+            script_payload.get("script_title"),
+            script_payload.get("script_opening"),
+            script_payload.get("script_role"),
+            isinstance(sensory, dict),
+            all(sensory.get(key) for key in ("see", "hear", "smell", "do")) if isinstance(sensory, dict) else False,
+            script_payload.get("script_closing"),
+        ]
+    )
+
+
+def generate_excel_script_payload(route, user_text="", intent=None):
+    if not route:
+        return {
+            "script": "",
+            "script_sections": [],
+            "script_title": "",
+            "script_opening": "",
+            "script_role": "",
+            "script_sensory": {"see": "", "hear": "", "smell": "", "do": ""},
+            "script_closing": "",
+        }
+
+    context = _script_context(route, user_text, intent)
+    sections = generate_excel_script_sections(route, user_text, intent, context=context)
+    script_title = _script_title(route, context)
+    script_opening = _script_opening(route, context)
+    script_role = _script_role(context)
+    script_sensory = _script_sensory(route, context)
+    script_closing = _script_closing(route, context)
+    script = generate_excel_script(
+        route,
+        sections,
+        script_title=script_title,
+        script_opening=script_opening,
+        script_role=script_role,
+        script_closing=script_closing,
+    )
+    return {
+        "script": script,
+        "script_sections": sections,
+        "script_title": script_title,
+        "script_opening": script_opening,
+        "script_role": script_role,
+        "script_sensory": script_sensory,
+        "script_closing": script_closing,
+    }
+
+
+def generate_excel_script(
+    route,
+    script_sections=None,
+    script_title="",
+    script_opening="",
+    script_role="",
+    script_closing="",
+):
     if not route:
         return ""
 
@@ -205,17 +281,18 @@ def generate_excel_script(route, script_sections=None):
     return "。".join(
         part
         for part in [
-            f"这是一条以你的情绪为主线的上海沉浸式剧本，从{_script_part(route.get('route_name', '这条路线'))}展开",
-            _script_part(opening.get("text")),
+            _script_part(script_title) or "把自己还给自己的半日",
+            _script_part(script_opening) or _script_part(opening.get("text")),
+            _script_part(script_role),
             f"真实场景会依次经过{'、'.join(spot_names)}" if spot_names else "",
             f"情绪变化会从{'; '.join(emotion_turns)}慢慢推进" if emotion_turns else "",
-            _script_part(closing.get("text")),
+            _script_part(script_closing) or _script_part(closing.get("text")),
         ]
         if part
     )
 
 
-def generate_excel_script_sections(route, user_text="", intent=None):
+def generate_excel_script_sections(route, user_text="", intent=None, context=None):
     if not route:
         return []
 
@@ -223,24 +300,16 @@ def generate_excel_script_sections(route, user_text="", intent=None):
     route_intro = _script_part(route.get("route_intro_user_facing", ""))
     script_angle = _script_part(route.get("ai_script_angle", ""))
     match_reason = _script_part(route.get("match_reason", ""))
-    context = _script_context(route, user_text, intent)
+    context = context or _script_context(route, user_text, intent)
     opening_scene = (
         f"{route_name}像一段已经搭好的城市舞台，"
         f"{route_intro or script_angle or match_reason or '真实点位会把心情慢慢带入上海'}"
     )
-    opening_text = "。".join(
-        part
-        for part in [
-            f"这条路线不把你推进普通攻略，而是先接住此刻的心情：{context['mood']}",
-            f"它会沿着{script_angle or route_name or '上海的真实点位'}展开，让情绪从{context['start_emotion']}走向{context['end_emotion']}",
-            match_reason,
-        ]
-        if part
-    )
+    opening_text = _script_opening(route, context)
     sections = [
         {
             "type": "opening",
-            "title": "开场｜把心情交给这条路",
+            "title": "开场白｜把心情交给这条路",
             "text": opening_text or "这条路线会把此刻的心情，慢慢带进上海的街道里。",
             "emotion_experience": f"从{context['start_emotion']}开始，不急着变好，先让自己被城市接住。",
             "action_guide": "先把这条路线当成一段预演，不急着打卡，也不用把每一站都完成得很漂亮。",
@@ -256,6 +325,7 @@ def generate_excel_script_sections(route, user_text="", intent=None):
         keywords = "、".join(spot.get("feedback_keywords", []))
         emotion_stage = _emotion_stage(index, total_spots, context)
         action = _spot_action_guide(spot_name, index, total_spots, keywords, context)
+        experience = _spot_experience(spot_name, keywords, context)
         scene = _spot_scene_image(spot_name, description, keywords)
         text = "。".join(
             part
@@ -272,8 +342,11 @@ def generate_excel_script_sections(route, user_text="", intent=None):
                 "type": "spot",
                 "spot_id": str(spot.get("spot_id", "")).strip(),
                 "spot_name": spot_name,
-                "title": f"{_section_number(index)}幕｜{spot_name}" if spot_name else f"{_section_number(index)}幕",
+                "location": spot_name,
+                "title": _spot_scene_title(index, spot_name, keywords, context),
                 "text": text or "这一站适合放慢脚步，给路线留出一点停顿。",
+                "experience": experience,
+                "emotion_shift": emotion_stage,
                 "emotion_experience": emotion_stage,
                 "action_guide": action,
                 "scene_image": scene,
@@ -293,8 +366,8 @@ def generate_excel_script_sections(route, user_text="", intent=None):
     sections.append(
         {
             "type": "closing",
-            "title": "收束｜把变化带回自己",
-            "text": f"走完这些点位后，路线不会只留下到此一游的清单，而会把{context['mood']}收束成一段更清楚的城市记忆。",
+            "title": "结尾收束｜把变化带回自己",
+            "text": _script_closing(route, context),
             "emotion_experience": f"从{context['start_emotion']}走到{context['end_emotion']}，不是被治好，而是多了一点可以安放自己的空间。",
             "action_guide": "离开前选一个最有感觉的画面记下来，它会成为这段路线真正的结尾。",
             "scene_image": closing_scene,
@@ -321,6 +394,146 @@ def _script_context(route, user_text, intent):
         "start_emotion": start_emotion,
         "end_emotion": end_emotion,
     }
+
+
+def _script_title(route, context):
+    route_text = _route_story_text(route, context)
+    if any(word in route_text for word in ["武康", "梧桐"]):
+        return "在梧桐影里慢慢静下来"
+    if any(word in route_text for word in ["独处", "安静", "低噪音", "疗愈", "慢"]):
+        return "把自己还给自己的半日"
+    if any(word in route_text for word in ["夜景", "灯光", "外滩", "江", "浪漫"]):
+        return "把今天交给灯光收好"
+    if any(word in route_text for word in ["公园", "自然", "滨江", "松弛"]):
+        return "逃离喧闹的三小时"
+    if any(word in route_text for word in ["灵感", "艺术", "看展", "设计"]):
+        return "让灵感重新亮起来"
+    if any(word in route_text for word in ["怀旧", "老上海", "历史", "文学"]):
+        return "和旧时光并肩慢走"
+    if any(word in route_text for word in ["探索", "冷门", "隐藏", "工业"]):
+        return "拐进城市隐藏的一页"
+    return "一个人的城市低语"
+
+
+def _script_opening(route, context):
+    script_angle = _script_part(route.get("ai_script_angle", ""))
+    match_reason = _script_part(route.get("match_reason", ""))
+    spot_phrase = _spot_phrase(route, limit=3)
+    route_scene = script_angle or spot_phrase or "这几处真实的上海点位"
+    why = (
+        f"它不会把你推向热闹的人群，而是沿着{route_scene}慢慢展开"
+        if route_scene
+        else "它不会把你推向热闹的人群，而是让城市节奏先慢下来"
+    )
+    if spot_phrase:
+        why = f"{why}，带你经过{spot_phrase}"
+    return "。".join(
+        part
+        for part in [
+            f"如果今天的你带着{context['mood']}，这条路线适合你",
+            why,
+            f"它的作用不是安排你完成什么，而是让情绪从{context['start_emotion']}慢慢走向{context['end_emotion']}",
+            match_reason,
+        ]
+        if part
+    )
+
+
+def _script_role(context):
+    return (
+        f"今天的你是今天的主角，也是一位短暂逃离日常的人。"
+        f"你不需要完成任务，不需要证明自己来过，只需要跟着城市的节奏慢一点，"
+        f"让{context['mood']}在路上有地方停靠。"
+    )
+
+
+def _script_sensory(route, context):
+    route_text = _route_story_text(route, context)
+    spot_phrase = _spot_phrase(route, limit=2)
+    if any(word in route_text for word in ["夜景", "灯光", "外滩", "江", "滨江"]):
+        see = f"街灯、建筑轮廓、江面反光，以及{spot_phrase or '真实点位'}之间逐渐铺开的夜色。"
+        hear = "脚步声、远处车流、江边风声，以及人群被拉远后的城市底噪。"
+        smell = "潮湿空气、江风、雨后路面和街边植物的气息。"
+    elif any(word in route_text for word in ["艺术", "看展", "设计", "灵感"]):
+        see = f"展陈空间、建筑线条、橱窗细节，以及{spot_phrase or '每一处点位'}里的光影变化。"
+        hear = "压低的说话声、脚步声、门被轻轻推开的声音。"
+        smell = "纸张、木质空间、咖啡和室内空气里安静的味道。"
+    elif any(word in route_text for word in ["公园", "自然", "植物", "松江", "滨水"]):
+        see = f"植物、开阔的路面、河面或草木边缘，以及{spot_phrase or '真实点位'}里的留白。"
+        hear = "风声、脚步声、偶尔经过的车流声和更远处的日常声响。"
+        smell = "植物、泥土、雨后路面和微湿空气的味道。"
+    else:
+        see = f"树影、建筑轮廓、街角橱窗，以及{spot_phrase or '真实点位'}里慢慢显影的城市画面。"
+        hear = "脚步声、风声、远处车流，偶尔还有咖啡机或店门开合的声音。"
+        smell = "咖啡香、雨后路面、植物和老街区空气里温和的味道。"
+
+    if any(word in route_text for word in ["看展", "艺术", "设计"]):
+        do = "慢走、看展、停留、拍下一个细节，再写下一句突然冒出来的话。"
+    elif any(word in route_text for word in ["夜景", "灯光", "江"]):
+        do = "慢走、停在光线好看的地方、拍照、听一首歌，然后让视线在远处停一会儿。"
+    else:
+        do = "慢走、停留、拍低饱和照片、写字、听歌，或者什么也不做地发呆。"
+    return {"see": see, "hear": hear, "smell": smell, "do": do}
+
+
+def _script_closing(route, context):
+    spot_phrase = _spot_phrase(route, limit=3)
+    route_memory = f"走过{spot_phrase}之后，" if spot_phrase else "走完这条路线之后，"
+    return (
+        f"情绪落点：这条路线不会让你立刻变得开心，也不会把今天变成一份攻略成果。"
+        f"{route_memory}你会把{context['mood']}慢慢收进一段更清楚的城市记忆里。"
+        f"独处不是被世界落下，而是终于能听见自己从{context['start_emotion']}走向{context['end_emotion']}。"
+    )
+
+
+def _spot_experience(spot_name, keywords, context):
+    if keywords:
+        return f"慢走、停留，顺着{keywords}里最打动你的细节拍照、写字或发呆。"
+    return f"在{spot_name or '这一站'}慢走、停留、拍一张低饱和照片，给自己几分钟空白。"
+
+
+def _spot_scene_title(index, spot_name, keywords, context):
+    if index == 1:
+        scene_title = "从街角开始降噪"
+    elif index >= 1 and keywords:
+        scene_title = f"顺着{keywords.split('、')[0]}继续往里走"
+    else:
+        scene_title = "把脚步交给城市"
+    return f"{_section_number(index)}幕｜{scene_title}" if spot_name else f"{_section_number(index)}幕"
+
+
+def _route_story_text(route, context):
+    parts = [
+        route.get("route_name", ""),
+        route.get("route_intro_user_facing", ""),
+        route.get("ai_script_angle", ""),
+        route.get("match_reason", ""),
+        route.get("suitable_mood", ""),
+        " ".join(route.get("matched_mindsets", [])),
+        " ".join(route.get("dominant_mindsets", [])),
+        " ".join(route.get("matched_tags", [])),
+        context.get("mood", "") if context else "",
+    ]
+    for spot in route.get("spots", []):
+        parts.extend(
+            [
+                spot.get("name", ""),
+                spot.get("description", ""),
+                " ".join(spot.get("feedback_keywords", [])),
+            ]
+        )
+    return " ".join(str(part or "") for part in parts)
+
+
+def _spot_phrase(route, limit=None):
+    names = [
+        _script_part(spot.get("name", ""))
+        for spot in route.get("spots", [])
+        if _script_part(spot.get("name", ""))
+    ]
+    if limit:
+        names = names[:limit]
+    return "、".join(names)
 
 
 def _ending_emotion(route, mood):

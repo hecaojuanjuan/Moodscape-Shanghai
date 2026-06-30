@@ -584,6 +584,33 @@ textarea:focus,
   color: var(--accent-dark);
 }
 
+.script-story {
+  display: grid;
+  gap: 14px;
+}
+
+.script-story-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.28rem;
+  line-height: 1.45;
+}
+
+.script-story-block {
+  display: grid;
+  gap: 8px;
+}
+
+.script-story-block h4 {
+  margin: 0;
+  color: var(--accent-dark);
+  font-size: 0.9rem;
+}
+
+.script-story-block p {
+  color: var(--text);
+}
+
 .script-section-list {
   display: grid;
   gap: 12px;
@@ -623,12 +650,18 @@ textarea:focus,
   font-weight: 700;
 }
 
+.script-scene-meta,
 .script-section-signals {
   display: grid;
   gap: 8px;
   margin: 10px 0 0;
 }
 
+.script-scene-meta {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.script-scene-meta div,
 .script-section-signals div {
   display: grid;
   gap: 3px;
@@ -637,16 +670,44 @@ textarea:focus,
   padding: 9px 10px;
 }
 
+.script-scene-meta dt,
 .script-section-signals dt {
   color: var(--accent-dark);
   font-size: 0.78rem;
   font-weight: 800;
 }
 
+.script-scene-meta dd,
 .script-section-signals dd {
   margin: 0;
   color: var(--text);
   font-size: 0.9rem;
+  line-height: 1.65;
+}
+
+.script-sensory-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.script-sensory-grid div {
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 10px;
+}
+
+.script-sensory-grid dt {
+  margin-bottom: 4px;
+  color: var(--rose);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.script-sensory-grid dd {
+  margin: 0;
+  color: var(--text);
   line-height: 1.65;
 }
 
@@ -776,6 +837,11 @@ textarea:focus,
   .spot-index {
     width: 30px;
     height: 30px;
+  }
+
+  .script-scene-meta,
+  .script-sensory-grid {
+    grid-template-columns: 1fr;
   }
 
   .map-copy {

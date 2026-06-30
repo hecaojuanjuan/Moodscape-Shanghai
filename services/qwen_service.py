@@ -81,7 +81,7 @@ class QwenService:
 
         route_payloads = [_route_prompt_payload(route) for route in routes]
         request_payload = {
-            "task": "为候选上海路线分别生成沉浸式旅行剧本：以用户心境为主线、以真实城市点位为场景、以情绪变化为结构。不要生成普通旅游攻略。",
+            "task": "为候选上海路线分别生成六段式沉浸旅行剧本：以用户心境为主线、以真实城市点位为场景、以情绪变化为结构。不要生成普通旅游攻略。",
             "user_text": str(user_text or "").strip(),
             "intent": intent or {},
             "routes": route_payloads,
@@ -90,11 +90,18 @@ class QwenService:
                 "只能使用输入中提供的路线和点位。",
                 "不得新增景点、改变点位顺序或虚构开放时间、票务信息、历史事件。",
                 "不要生成普通旅游攻略、景点百科、交通清单、营销广告或泛泛的打卡建议。",
+                "每条路线必须输出 6 个固定部分：剧本标题、开场白、角色设定、分幕路线、感官描写、结尾收束。",
+                "script_title 必须有情绪和画面感，禁止只用地点名、路线名、上海独处路线推荐或任何包含“路线推荐”的标题。",
+                "script_opening 是开场白，要像把用户拉进故事里，回答“为什么适合此刻的你”。",
+                "script_role 是角色设定，默认用户是“今天的主角”，强调不需要完成任务，只需要跟着城市节奏慢下来。",
+                "script_sensory 是感官描写，必须包含 see、hear、smell、do，分别写看到什么、听到什么、闻到什么、做什么。",
+                "script_closing 是结尾收束，必须写情绪落点，不写成攻略总结。",
                 "整体使用第二人称，像城市剧本编辑在帮用户预演一段心境变化，不写现场导航命令。",
                 "script 是兼容旧展示的一段沉浸式路线摘要，约180至260字，必须写出真实点位名和情绪变化。",
                 "script_sections 必须包含 opening、按输入点位顺序排列的 spot 分幕、closing。",
                 "每一幕必须包含 text、emotion_experience、action_guide、scene_image 四个中文字段。",
                 "emotion_experience 写用户在该幕里的情绪体验和变化；action_guide 写轻量行动引导；scene_image 写可感知的场景画面。",
+                "spot 分幕还必须包含 location、experience、emotion_shift；location 必须是对应真实点位名，experience 写慢走、停留、拍照、写字、发呆等行动体验，emotion_shift 写从什么情绪走向什么情绪。",
                 "spot 分幕只能引用对应点位事实，可写感官与心境，但不能添加未提供事实。",
             ],
             "output_schema": {
@@ -102,6 +109,16 @@ class QwenService:
                     {
                         "route_id": "输入中的 route_id",
                         "script": "兼容旧展示的一段沉浸式路线剧本",
+                        "script_title": "有情绪的剧本标题，如《把自己还给自己的半日》",
+                        "script_opening": "开场白：为什么这条路线适合用户此刻的心情",
+                        "script_role": "角色设定：今天的你是今天的主角",
+                        "script_sensory": {
+                            "see": "看到什么：树影、街灯、建筑、橱窗、河面等来自真实点位的画面",
+                            "hear": "听到什么：脚步声、风声、咖啡机声、远处车流等",
+                            "smell": "闻到什么：咖啡、雨后路面、植物、老街区等",
+                            "do": "做什么：慢走、停留、拍照、写字、听歌、发呆等",
+                        },
+                        "script_closing": "结尾收束：写情绪落点，不写攻略总结",
                         "script_sections": [
                             {
                                 "type": "opening",
@@ -117,6 +134,9 @@ class QwenService:
                                 "spot_name": "输入中的 spot_name",
                                 "title": "第一幕｜点位名",
                                 "text": "该点位的预览分幕",
+                                "location": "对应真实点位名",
+                                "experience": "在该点位可以进行的行动体验",
+                                "emotion_shift": "从某种心境转向某种心境",
                                 "emotion_experience": "这一站带来的情绪体验和变化",
                                 "action_guide": "用户在这一站可以做的轻量行动",
                                 "scene_image": "基于该点位事实的场景画面",
@@ -255,13 +275,50 @@ def _route_prompt_payload(route):
 
 def _clean_script_payload(item, route):
     script = _clean_text(item.get("script"))
+    script_title = _clean_text(item.get("script_title"))
+    script_opening = _clean_text(item.get("script_opening"))
+    script_role = _clean_text(item.get("script_role"))
+    script_sensory = _clean_script_sensory(item.get("script_sensory"))
+    script_closing = _clean_text(item.get("script_closing"))
     sections = _clean_script_sections(item.get("script_sections"), route)
-    if not script or not sections:
+    if (
+        not script
+        or _is_weak_script_title(script_title, route)
+        or not script_opening
+        or not script_role
+        or not script_sensory
+        or not script_closing
+        or not sections
+    ):
         return None
     return {
         "script": script,
+        "script_title": script_title,
+        "script_opening": script_opening,
+        "script_role": script_role,
+        "script_sensory": script_sensory,
+        "script_closing": script_closing,
         "script_sections": sections,
     }
+
+
+def _clean_script_sensory(raw_sensory):
+    if not isinstance(raw_sensory, dict):
+        return {}
+    sensory = {}
+    for key in ("see", "hear", "smell", "do"):
+        value = _clean_text(raw_sensory.get(key))
+        if not value:
+            return {}
+        sensory[key] = value
+    return sensory
+
+
+def _is_weak_script_title(title, route):
+    if not title:
+        return True
+    route_name = _clean_text(route.get("route_name"))
+    return title == route_name or "路线推荐" in title
 
 
 def _clean_script_sections(raw_sections, route):
@@ -323,6 +380,15 @@ def _clean_script_sections(raw_sections, route):
                 continue
             clean_section["spot_id"] = _clean_text(matched_spot.get("spot_id"))
             clean_section["spot_name"] = _clean_text(matched_spot.get("name"))
+            clean_section["location"] = _clean_text(section.get("location")) or clean_section["spot_name"]
+            clean_section["experience"] = (
+                _clean_text(section.get("experience"))
+                or clean_section.get("action_guide", "")
+            )
+            clean_section["emotion_shift"] = (
+                _clean_text(section.get("emotion_shift"))
+                or clean_section.get("emotion_experience", "")
+            )
             section_spot_keys.append(_route_spot_key(matched_spot))
             has_spot = True
         elif section_type == "opening":
