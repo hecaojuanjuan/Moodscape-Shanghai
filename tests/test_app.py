@@ -17,16 +17,26 @@ class AppTest(unittest.TestCase):
         self.assertEqual(data["mindset_tags"], ["独处", "疗愈", "灵感", "怀旧", "成长", "浪漫", "探索", "社交"])
 
     def test_generate_script_endpoint_returns_multiple_excel_routes(self):
-        from app import app
+        import app as app_module
 
-        client = app.test_client()
-        response = client.post(
-            "/api/generate-script",
-            json={
-                "selected_tags": ["想一个人静静"],
-                "user_text": "低噪音 慢节奏 可独处 可停留",
-            },
-        )
+        fallback_intent = {
+            "summary": "低噪音 慢节奏 可独处 可停留",
+            "inferred_experience_tags": [],
+            "inferred_mindset_tags": [],
+            "source": "fallback",
+        }
+        with (
+            patch.object(app_module.qwen_service, "analyze_intent", return_value=fallback_intent),
+            patch.object(app_module.qwen_service, "generate_route_scripts", return_value={}),
+        ):
+            client = app_module.app.test_client()
+            response = client.post(
+                "/api/generate-script",
+                json={
+                    "selected_tags": ["想一个人静静"],
+                    "user_text": "低噪音 慢节奏 可独处 可停留",
+                },
+            )
 
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
@@ -47,6 +57,8 @@ class AppTest(unittest.TestCase):
         self.assertIn("route_distance_km", first)
         self.assertIn("武康大楼", first["match_reason"])
         self.assertIn("武康大楼", first["script"])
+        self.assertIn("情绪", first["script"])
+        self.assertNotIn(first["spots"][0]["ticket_reservation"], first["script"])
         self.assertIn("script_sections", first)
         self.assertEqual(first["script_sections"][0]["type"], "opening")
         self.assertEqual(first["script_sections"][-1]["type"], "closing")
@@ -68,6 +80,13 @@ class AppTest(unittest.TestCase):
             self.assertIn("script", route)
             self.assertIn("script_sections", route)
             self.assertGreaterEqual(len(route["script_sections"]), 3)
+            for section in route["script_sections"]:
+                self.assertIn("emotion_experience", section)
+                self.assertIn("action_guide", section)
+                self.assertIn("scene_image", section)
+                self.assertTrue(section["emotion_experience"])
+                self.assertTrue(section["action_guide"])
+                self.assertTrue(section["scene_image"])
             for spot in route["spots"]:
                 self.assertIn("spot_id", spot)
                 self.assertIn("name", spot)
@@ -76,7 +95,7 @@ class AppTest(unittest.TestCase):
                 self.assertIn("ticket_reservation", spot)
             self.assertEqual(route["script_source"], "fallback")
 
-        self.assertEqual(data["intent"]["source"], "fallback")
+        self.assertEqual(data["intent"], fallback_intent)
 
     def test_generate_script_uses_qwen_intent_and_partially_falls_back(self):
         import app as app_module
@@ -167,6 +186,9 @@ class AppTest(unittest.TestCase):
         self.assertEqual(data["routes"][0]["route_id"], "R01")
         self.assertEqual(data["routes"][0]["spots"][0]["name"], "外滩")
         self.assertEqual(data["routes"][0]["script_source"], "fallback")
+        self.assertTrue(data["routes"][0]["script_sections"][0]["emotion_experience"])
+        self.assertTrue(data["routes"][0]["script_sections"][1]["action_guide"])
+        self.assertTrue(data["routes"][0]["script_sections"][1]["scene_image"])
 
     def test_generate_script_endpoint_requires_current_input_before_profile_enhancement(self):
         from app import app

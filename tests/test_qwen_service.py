@@ -107,6 +107,9 @@ class QwenServiceTest(unittest.TestCase):
                                         "type": "opening",
                                         "title": "开场",
                                         "text": "你会从第一站进入这条安静路线。",
+                                        "emotion_experience": "把疲惫放低一点，先进入安静。",
+                                        "action_guide": "先把脚步放慢，不急着打卡。",
+                                        "scene_image": "街角的光落在墙面上，城市声音慢下来。",
                                     },
                                     {
                                         "type": "spot",
@@ -114,6 +117,9 @@ class QwenServiceTest(unittest.TestCase):
                                         "spot_name": "第一站",
                                         "title": "第一幕｜第一站",
                                         "text": "先把脚步放慢，留意街角的安静。",
+                                        "emotion_experience": "从紧绷切换到可停留。",
+                                        "action_guide": "在第一站停一会儿，观察周围的细节。",
+                                        "scene_image": "安静的街角把注意力收回来。",
                                     },
                                     {
                                         "type": "spot",
@@ -121,11 +127,17 @@ class QwenServiceTest(unittest.TestCase):
                                         "spot_name": "第二站",
                                         "title": "第二幕｜第二站",
                                         "text": "再把散步交给下一处可以停留的地方。",
+                                        "emotion_experience": "情绪继续变轻，散步开始有余地。",
+                                        "action_guide": "按原路线走到第二站，把节奏留给自己。",
+                                        "scene_image": "下一处停留点像一个缓慢展开的空白。",
                                     },
                                     {
                                         "type": "closing",
                                         "title": "收束",
                                         "text": "最后把这段散步收进今天的余光里。",
+                                        "emotion_experience": "把松下来的感觉带走。",
+                                        "action_guide": "离开前回看这条路线里最安静的一幕。",
+                                        "scene_image": "余光把一路的停顿收成一段城市记忆。",
                                     },
                                 ],
                             },
@@ -172,6 +184,9 @@ class QwenServiceTest(unittest.TestCase):
                             "type": "opening",
                             "title": "开场",
                             "text": "你会从第一站进入这条安静路线。",
+                            "emotion_experience": "把疲惫放低一点，先进入安静。",
+                            "action_guide": "先把脚步放慢，不急着打卡。",
+                            "scene_image": "街角的光落在墙面上，城市声音慢下来。",
                         },
                         {
                             "type": "spot",
@@ -179,6 +194,9 @@ class QwenServiceTest(unittest.TestCase):
                             "spot_name": "第一站",
                             "title": "第一幕｜第一站",
                             "text": "先把脚步放慢，留意街角的安静。",
+                            "emotion_experience": "从紧绷切换到可停留。",
+                            "action_guide": "在第一站停一会儿，观察周围的细节。",
+                            "scene_image": "安静的街角把注意力收回来。",
                         },
                         {
                             "type": "spot",
@@ -186,11 +204,17 @@ class QwenServiceTest(unittest.TestCase):
                             "spot_name": "第二站",
                             "title": "第二幕｜第二站",
                             "text": "再把散步交给下一处可以停留的地方。",
+                            "emotion_experience": "情绪继续变轻，散步开始有余地。",
+                            "action_guide": "按原路线走到第二站，把节奏留给自己。",
+                            "scene_image": "下一处停留点像一个缓慢展开的空白。",
                         },
                         {
                             "type": "closing",
                             "title": "收束",
                             "text": "最后把这段散步收进今天的余光里。",
+                            "emotion_experience": "把松下来的感觉带走。",
+                            "action_guide": "离开前回看这条路线里最安静的一幕。",
+                            "scene_image": "余光把一路的停顿收成一段城市记忆。",
                         },
                     ],
                 }
@@ -247,7 +271,11 @@ class QwenServiceTest(unittest.TestCase):
 
         request = client.completions.requests[0]
         user_prompt = request["messages"][1]["content"]
-        self.assertIn("城市散文感的分幕路线剧本", user_prompt)
+        self.assertIn("用户心境为主线", user_prompt)
+        self.assertIn("不要生成普通旅游攻略", user_prompt)
+        self.assertIn("情绪体验", user_prompt)
+        self.assertIn("行动引导", user_prompt)
+        self.assertIn("场景画面", user_prompt)
         self.assertIn("ai_script_angle", user_prompt)
         self.assertIn("suitable_mood", user_prompt)
         self.assertIn("feedback_keywords", user_prompt)

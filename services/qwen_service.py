@@ -81,7 +81,7 @@ class QwenService:
 
         route_payloads = [_route_prompt_payload(route) for route in routes]
         request_payload = {
-            "task": "为候选上海路线分别生成城市散文感的分幕路线剧本，供用户出发前预览。",
+            "task": "为候选上海路线分别生成沉浸式旅行剧本：以用户心境为主线、以真实城市点位为场景、以情绪变化为结构。不要生成普通旅游攻略。",
             "user_text": str(user_text or "").strip(),
             "intent": intent or {},
             "routes": route_payloads,
@@ -89,21 +89,27 @@ class QwenService:
                 "每个 route_id 最多返回一组剧本。",
                 "只能使用输入中提供的路线和点位。",
                 "不得新增景点、改变点位顺序或虚构开放时间、票务信息、历史事件。",
-                "整体使用第二人称、城市散文感、出发前预览语气，不写现场导航命令。",
-                "script 是兼容旧展示的一段路线摘要，约160至240字。",
+                "不要生成普通旅游攻略、景点百科、交通清单、营销广告或泛泛的打卡建议。",
+                "整体使用第二人称，像城市剧本编辑在帮用户预演一段心境变化，不写现场导航命令。",
+                "script 是兼容旧展示的一段沉浸式路线摘要，约180至260字，必须写出真实点位名和情绪变化。",
                 "script_sections 必须包含 opening、按输入点位顺序排列的 spot 分幕、closing。",
+                "每一幕必须包含 text、emotion_experience、action_guide、scene_image 四个中文字段。",
+                "emotion_experience 写用户在该幕里的情绪体验和变化；action_guide 写轻量行动引导；scene_image 写可感知的场景画面。",
                 "spot 分幕只能引用对应点位事实，可写感官与心境，但不能添加未提供事实。",
             ],
             "output_schema": {
                 "scripts": [
                     {
                         "route_id": "输入中的 route_id",
-                        "script": "兼容旧展示的一段路线剧本",
+                        "script": "兼容旧展示的一段沉浸式路线剧本",
                         "script_sections": [
                             {
                                 "type": "opening",
                                 "title": "开场",
                                 "text": "进入路线前的情绪开场",
+                                "emotion_experience": "用户此刻心境如何被路线接住",
+                                "action_guide": "出发前如何调整节奏",
+                                "scene_image": "这条路线即将展开的城市画面",
                             },
                             {
                                 "type": "spot",
@@ -111,11 +117,17 @@ class QwenService:
                                 "spot_name": "输入中的 spot_name",
                                 "title": "第一幕｜点位名",
                                 "text": "该点位的预览分幕",
+                                "emotion_experience": "这一站带来的情绪体验和变化",
+                                "action_guide": "用户在这一站可以做的轻量行动",
+                                "scene_image": "基于该点位事实的场景画面",
                             },
                             {
                                 "type": "closing",
                                 "title": "收束",
                                 "text": "走完路线后的情绪收束",
+                                "emotion_experience": "路线结束后的心境变化",
+                                "action_guide": "离开前如何把体验带走",
+                                "scene_image": "路线回望时留下的城市画面",
                             },
                         ],
                     }
@@ -127,7 +139,7 @@ class QwenService:
             result = self._request_json(
                 system_prompt=(
                     "你是上海城市旅行剧本编辑。必须严格依据输入事实并返回 JSON 对象，"
-                    "不得输出 Markdown，不得把路线写成营销广告或景点百科。"
+                    "不得输出 Markdown，不得把路线写成营销广告、景点百科或普通旅游攻略。"
                 ),
                 user_prompt=json.dumps(request_payload, ensure_ascii=False),
                 max_tokens=3600,
@@ -295,6 +307,10 @@ def _clean_script_sections(raw_sections, route):
             "title": title,
             "text": text,
         }
+        for detail_key in ("emotion_experience", "action_guide", "scene_image"):
+            detail_value = _clean_text(section.get(detail_key))
+            if detail_value:
+                clean_section[detail_key] = detail_value
         if section_type == "spot":
             spot_id = _clean_text(section.get("spot_id"))
             spot_name = _clean_text(section.get("spot_name"))

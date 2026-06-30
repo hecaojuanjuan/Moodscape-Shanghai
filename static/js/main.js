@@ -520,8 +520,7 @@ function renderRouteDetail(route, index) {
 
       <section class="route-section script-box">
         <div class="section-heading-row">
-          <h3>AI 旅游剧本</h3>
-          <span>${route.script_source === "qwen" ? "千问生成" : "本地回退"}</span>
+          <h3>沉浸式城市剧本</h3>
         </div>
         ${renderScriptContent(route)}
       </section>
@@ -560,6 +559,23 @@ function renderScriptSection(section) {
   const spotName = sectionType === "spot" && section.spot_name
     ? `<span>${escapeHtml(section.spot_name)}</span>`
     : "";
+  const signals = [
+    ["情绪体验", section.emotion_experience],
+    ["行动引导", section.action_guide],
+    ["场景画面", section.scene_image],
+  ].filter(([, value]) => value);
+  const signalsHtml = signals.length
+    ? `
+      <dl class="script-section-signals">
+        ${signals.map(([label, value]) => `
+          <div>
+            <dt>${escapeHtml(label)}</dt>
+            <dd>${escapeHtml(value)}</dd>
+          </div>
+        `).join("")}
+      </dl>
+    `
+    : "";
 
   return `
     <article class="script-section script-section-${sectionType}">
@@ -568,6 +584,7 @@ function renderScriptSection(section) {
         ${spotName}
       </div>
       <p>${escapeHtml(section.text)}</p>
+      ${signalsHtml}
     </article>
   `;
 }

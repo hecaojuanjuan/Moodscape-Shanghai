@@ -623,6 +623,33 @@ textarea:focus,
   font-weight: 700;
 }
 
+.script-section-signals {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.script-section-signals div {
+  display: grid;
+  gap: 3px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.62);
+  padding: 9px 10px;
+}
+
+.script-section-signals dt {
+  color: var(--accent-dark);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.script-section-signals dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.65;
+}
+
 .section-heading-row,
 .map-heading {
   display: flex;
