@@ -480,6 +480,11 @@ function closeRouteDetail(event) {
 }
 
 function renderRouteDetail(route, index) {
+  const routeFacts = [
+    ["预计时间", route.estimated_time],
+    ["预算", `${route.budget_level || ""}预算`.trim()],
+    ["匹配度", `${route.match_percent}%`],
+  ].filter(([, value]) => value && value !== "预算");
   const spotsHtml = (route.spots || [])
     .map(
       (spot, index) => `
@@ -509,30 +514,36 @@ function renderRouteDetail(route, index) {
       </button>
 
       <section class="route-section">
-        <h3>推荐理由</h3>
-        <p>${escapeHtml(route.match_reason)}</p>
-      </section>
-
-      <section class="route-section">
-        <h3>点位列表</h3>
+        <h3>必要信息</h3>
+        <dl class="route-fact-grid">
+          ${routeFacts.map(([label, value]) => `
+            <div>
+              <dt>${escapeHtml(label)}</dt>
+              <dd>${escapeHtml(value)}</dd>
+            </div>
+          `).join("")}
+        </dl>
+        <div class="route-info-note">
+          <strong>推荐理由</strong>
+          <p>${escapeHtml(route.match_reason)}</p>
+        </div>
         <ol class="spot-list">${spotsHtml}</ol>
+        <div class="route-map-panel" aria-label="真实步行路线">
+          <div class="map-heading">
+            <div>
+              <h3>真实步行路线</h3>
+              <p id="routeMapStatus-${index}" aria-live="polite">正在加载高德地图...</p>
+            </div>
+          </div>
+          <div class="route-map" id="routeMap-${index}"></div>
+        </div>
       </section>
 
       <section class="route-section script-box">
         <div class="section-heading-row">
-          <h3>沉浸式城市剧本</h3>
+          <h3>分幕剧本</h3>
         </div>
         ${renderScriptContent(route)}
-      </section>
-
-      <section class="route-map-panel" aria-label="真实步行路线">
-        <div class="map-heading">
-          <div>
-            <h3>真实步行路线</h3>
-            <p id="routeMapStatus-${index}" aria-live="polite">正在加载高德地图...</p>
-          </div>
-        </div>
-        <div class="route-map" id="routeMap-${index}"></div>
       </section>
     </div>
   `;
@@ -540,141 +551,51 @@ function renderRouteDetail(route, index) {
 
 function renderScriptContent(route) {
   const sections = Array.isArray(route.script_sections)
-    ? route.script_sections.filter((section) => section && section.title && section.text)
+    ? route.script_sections.filter((section) => section && section.type === "spot" && section.title && section.text)
     : [];
-  const openingSection = sections.find((section) => section.type === "opening");
-  const closingSection = [...sections].reverse().find((section) => section.type === "closing");
-  const spotSections = sections.filter((section) => section.type === "spot");
   const scriptTitle = route.script_title || "沉浸式城市剧本";
-  const openingText = route.script_opening || openingSection?.text || "";
-  const roleText = route.script_role || "";
-  const closingText = route.script_closing || closingSection?.text || "";
-  const sensory = route.script_sensory && typeof route.script_sensory === "object"
-    ? route.script_sensory
-    : {};
 
-  if (!sections.length && !openingText && !roleText && !closingText) {
+  if (!sections.length) {
     return `<p>${escapeHtml(route.script)}</p>`;
   }
 
   return `
     <div class="script-story">
       <h4 class="script-story-title">${escapeHtml(scriptTitle)}</h4>
-      ${renderScriptBlock("开场白", openingText)}
-      ${renderScriptBlock("角色设定", roleText)}
-      ${renderScriptScenes(spotSections, route)}
-      ${renderScriptSensory(sensory)}
-      ${renderScriptBlock("结尾收束", closingText)}
+      <div class="script-section-list script-scene-list">
+        ${sections.map((section, index) => renderScriptScene(section, index)).join("")}
+      </div>
     </div>
   `;
 }
 
-function renderScriptBlock(label, text) {
-  if (!text) {
-    return "";
-  }
-
-  return `
-    <section class="script-story-block">
-      <h4>${escapeHtml(label)}</h4>
-      <p>${escapeHtml(text)}</p>
-    </section>
-  `;
-}
-
-function renderScriptScenes(spotSections, route) {
-  if (!spotSections.length) {
-    return renderScriptBlock("分幕路线", route.script || "");
-  }
-
-  return `
-    <section class="script-story-block">
-      <h4>分幕路线</h4>
-      <div class="script-section-list script-scene-list">
-        ${spotSections.map((section, index) => renderScriptScene(section, index)).join("")}
-      </div>
-    </section>
-  `;
-}
-
 function renderScriptScene(section, index) {
-  const sectionType = ["opening", "spot", "closing"].includes(section.type) ? section.type : "note";
-  const location = section.location || section.spot_name;
-  const experience = section.experience || section.action_guide;
-  const emotion = section.emotion_shift || section.emotion_experience;
-  const meta = [
-    ["地点", location],
-    ["体验", experience],
-    ["情绪", emotion],
-  ].filter(([, value]) => value);
-  const signals = [
-    ["情绪体验", section.emotion_experience],
-    ["行动引导", section.action_guide],
-    ["场景画面", section.scene_image],
-  ].filter(([, value]) => value);
-  const metaHtml = meta.length
-    ? `
-      <dl class="script-scene-meta">
-        ${meta.map(([label, value]) => `
-          <div>
-            <dt>${escapeHtml(label)}</dt>
-            <dd>${escapeHtml(value)}</dd>
-          </div>
-        `).join("")}
-      </dl>
-    `
-    : "";
-  const signalsHtml = signals.length
-    ? `
-      <dl class="script-section-signals">
-        ${signals.map(([label, value]) => `
-          <div>
-            <dt>${escapeHtml(label)}</dt>
-            <dd>${escapeHtml(value)}</dd>
-          </div>
-        `).join("")}
-      </dl>
-    `
-    : "";
+  const paragraphs = getScriptParagraphs(section);
 
   return `
-    <article class="script-section script-section-${sectionType}">
+    <article class="script-section script-section-spot">
       <div class="script-section-header">
         <strong>${escapeHtml(section.title || `第${index + 1}幕`)}</strong>
-        ${location ? `<span>${escapeHtml(location)}</span>` : ""}
       </div>
-      <p>${escapeHtml(section.text)}</p>
-      ${metaHtml}
-      ${signalsHtml}
+      ${paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("")}
     </article>
   `;
 }
 
-function renderScriptSensory(sensory) {
-  const items = [
-    ["看到", sensory.see],
-    ["听到", sensory.hear],
-    ["闻到", sensory.smell],
-    ["做什么", sensory.do],
-  ].filter(([, value]) => value);
-
-  if (!items.length) {
-    return "";
+function getScriptParagraphs(section) {
+  if (Array.isArray(section.paragraphs)) {
+    const paragraphs = section.paragraphs
+      .map((paragraph) => String(paragraph || "").trim())
+      .filter(Boolean);
+    if (paragraphs.length) {
+      return paragraphs;
+    }
   }
 
-  return `
-    <section class="script-story-block">
-      <h4>感官描写</h4>
-      <dl class="script-sensory-grid">
-        ${items.map(([label, value]) => `
-          <div>
-            <dt>${escapeHtml(label)}</dt>
-            <dd>${escapeHtml(value)}</dd>
-          </div>
-        `).join("")}
-      </dl>
-    </section>
-  `;
+  return String(section.text || "")
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
 }
 
 async function renderRouteMap(route, index) {

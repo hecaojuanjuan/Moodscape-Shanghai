@@ -103,57 +103,29 @@ class QwenServiceTest(unittest.TestCase):
                                 "route_id": "R01",
                                 "script": "从第一站开始慢慢走，让城市的声音慢下来。",
                                 "script_title": "把自己还给自己的半日",
-                                "script_opening": "如果今天的你不太想说话，这条路线会把你带进更安静的节奏。",
-                                "script_role": "今天的你是一位短暂逃离日常的人。",
-                                "script_sensory": {
-                                    "see": "树影、街角和低饱和的城市画面。",
-                                    "hear": "脚步声、风声和远处车流。",
-                                    "smell": "雨后路面和植物气息。",
-                                    "do": "慢走、停留、拍照、写下一句话。",
-                                },
-                                "script_closing": "情绪落点：这条路线会给你一个缓慢恢复的下午。",
                                 "script_sections": [
-                                    {
-                                        "type": "opening",
-                                        "title": "开场",
-                                        "text": "你会从第一站进入这条安静路线。",
-                                        "emotion_experience": "把疲惫放低一点，先进入安静。",
-                                        "action_guide": "先把脚步放慢，不急着打卡。",
-                                        "scene_image": "街角的光落在墙面上，城市声音慢下来。",
-                                    },
                                     {
                                         "type": "spot",
                                         "spot_id": "S01",
                                         "spot_name": "第一站",
-                                        "title": "第一幕｜第一站",
-                                        "location": "第一站",
-                                        "experience": "慢走、观察街角、拍一张低饱和照片。",
-                                        "emotion_shift": "从紧绷切换到可停留。",
-                                        "text": "先把脚步放慢，留意街角的安静。",
-                                        "emotion_experience": "从紧绷切换到可停留。",
-                                        "action_guide": "在第一站停一会儿，观察周围的细节。",
-                                        "scene_image": "安静的街角把注意力收回来。",
+                                        "title": "第一幕｜树影先替你慢下来。",
+                                        "paragraphs": [
+                                            "先把脚步放慢，留意街角的安静。",
+                                            "如果不赶时间，可以观察周围的细节。",
+                                            "你会发现注意力正在从紧绷切换到可停留。",
+                                        ],
+                                        "text": "先把脚步放慢，留意街角的安静。\n\n如果不赶时间，可以观察周围的细节。\n\n你会发现注意力正在从紧绷切换到可停留。",
                                     },
                                     {
                                         "type": "spot",
                                         "spot_id": "S02",
                                         "spot_name": "第二站",
-                                        "title": "第二幕｜第二站",
-                                        "location": "第二站",
-                                        "experience": "继续散步，留出几分钟发呆。",
-                                        "emotion_shift": "情绪继续变轻，散步开始有余地。",
-                                        "text": "再把散步交给下一处可以停留的地方。",
-                                        "emotion_experience": "情绪继续变轻，散步开始有余地。",
-                                        "action_guide": "按原路线走到第二站，把节奏留给自己。",
-                                        "scene_image": "下一处停留点像一个缓慢展开的空白。",
-                                    },
-                                    {
-                                        "type": "closing",
-                                        "title": "收束",
-                                        "text": "最后把这段散步收进今天的余光里。",
-                                        "emotion_experience": "把松下来的感觉带走。",
-                                        "action_guide": "离开前回看这条路线里最安静的一幕。",
-                                        "scene_image": "余光把一路的停顿收成一段城市记忆。",
+                                        "title": "第二幕｜继续往安静里走。",
+                                        "paragraphs": [
+                                            "再把散步交给下一处可以停留的地方。",
+                                            "按原路线走到第二站，把节奏留给自己。",
+                                        ],
+                                        "text": "再把散步交给下一处可以停留的地方。\n\n按原路线走到第二站，把节奏留给自己。",
                                     },
                                 ],
                             },
@@ -194,16 +166,14 @@ class QwenServiceTest(unittest.TestCase):
         script = scripts["R01"]
         self.assertEqual(script["script"], "从第一站开始慢慢走，让城市的声音慢下来。")
         self.assertEqual(script["script_title"], "把自己还给自己的半日")
-        self.assertEqual(script["script_opening"], "如果今天的你不太想说话，这条路线会把你带进更安静的节奏。")
-        self.assertEqual(script["script_role"], "今天的你是一位短暂逃离日常的人。")
-        self.assertEqual(script["script_sensory"]["see"], "树影、街角和低饱和的城市画面。")
-        self.assertEqual(script["script_sensory"]["hear"], "脚步声、风声和远处车流。")
-        self.assertEqual(script["script_sensory"]["smell"], "雨后路面和植物气息。")
-        self.assertEqual(script["script_sensory"]["do"], "慢走、停留、拍照、写下一句话。")
-        self.assertIn("情绪落点", script["script_closing"])
-        self.assertEqual(script["script_sections"][1]["location"], "第一站")
-        self.assertEqual(script["script_sections"][1]["experience"], "慢走、观察街角、拍一张低饱和照片。")
-        self.assertEqual(script["script_sections"][1]["emotion_shift"], "从紧绷切换到可停留。")
+        self.assertNotIn("script_opening", script)
+        self.assertNotIn("script_role", script)
+        self.assertNotIn("script_sensory", script)
+        self.assertNotIn("script_closing", script)
+        self.assertEqual(len(script["script_sections"]), 2)
+        self.assertTrue(all(section["type"] == "spot" for section in script["script_sections"]))
+        self.assertEqual(script["script_sections"][0]["spot_name"], "第一站")
+        self.assertEqual(script["script_sections"][0]["paragraphs"][0], "先把脚步放慢，留意街角的安静。")
         self.assertEqual(routes, original_routes)
 
     def test_generate_route_scripts_prompt_includes_immersive_route_context(self):
@@ -215,23 +185,24 @@ class QwenServiceTest(unittest.TestCase):
                             {
                                 "route_id": "R01",
                                 "script": "从第一站开始慢慢走，让城市的声音慢下来。",
+                                "script_title": "把自己还给自己的半日",
                                 "script_sections": [
-                                    {"type": "opening", "title": "开场", "text": "开场。"},
                                     {
                                         "type": "spot",
                                         "spot_id": "S01",
                                         "spot_name": "第一站",
-                                        "title": "第一幕｜第一站",
+                                        "title": "第一幕｜树影先替你慢下来。",
                                         "text": "第一幕。",
+                                        "paragraphs": ["第一幕。"],
                                     },
                                     {
                                         "type": "spot",
                                         "spot_id": "S02",
                                         "spot_name": "第二站",
-                                        "title": "第二幕｜第二站",
+                                        "title": "第二幕｜继续往安静里走。",
                                         "text": "第二幕。",
+                                        "paragraphs": ["第二幕。"],
                                     },
-                                    {"type": "closing", "title": "收束", "text": "收束。"},
                                 ],
                             }
                         ]
@@ -257,16 +228,14 @@ class QwenServiceTest(unittest.TestCase):
         user_prompt = request["messages"][1]["content"]
         self.assertIn("用户心境为主线", user_prompt)
         self.assertIn("不要生成普通旅游攻略", user_prompt)
+        self.assertIn("按点位分幕", user_prompt)
         self.assertIn("剧本标题", user_prompt)
-        self.assertIn("开场白", user_prompt)
-        self.assertIn("角色设定", user_prompt)
-        self.assertIn("分幕路线", user_prompt)
-        self.assertIn("感官描写", user_prompt)
-        self.assertIn("结尾收束", user_prompt)
+        self.assertNotIn("开场白", user_prompt)
+        self.assertNotIn("角色设定", user_prompt)
+        self.assertNotIn("感官描写", user_prompt)
+        self.assertNotIn("结尾收束", user_prompt)
         self.assertIn("上海独处路线推荐", user_prompt)
-        self.assertIn("情绪体验", user_prompt)
-        self.assertIn("行动引导", user_prompt)
-        self.assertIn("场景画面", user_prompt)
+        self.assertIn("paragraphs", user_prompt)
         self.assertIn("ai_script_angle", user_prompt)
         self.assertIn("suitable_mood", user_prompt)
         self.assertIn("feedback_keywords", user_prompt)

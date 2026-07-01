@@ -62,13 +62,9 @@ class AppTest(unittest.TestCase):
         self.assertIn("script_title", first)
         self.assertNotEqual(first["script_title"], first["route_name"])
         self.assertNotIn("路线推荐", first["script_title"])
-        self.assertTrue(first["script_opening"])
-        self.assertTrue(first["script_role"])
-        self.assertIn("今天的主角", first["script_role"])
-        self.assertIn("情绪落点", first["script_closing"])
         self.assertIn("script_sections", first)
-        self.assertEqual(first["script_sections"][0]["type"], "opening")
-        self.assertEqual(first["script_sections"][-1]["type"], "closing")
+        self.assertTrue(all(section["type"] == "spot" for section in first["script_sections"]))
+        self.assertEqual(len(first["script_sections"]), len(first["spots"]))
         self.assertTrue(
             any(
                 section["type"] == "spot" and section["spot_name"] == "武康大楼"
@@ -87,36 +83,19 @@ class AppTest(unittest.TestCase):
             self.assertIn("script", route)
             self.assertIn("script_sections", route)
             self.assertIn("script_title", route)
-            self.assertIn("script_opening", route)
-            self.assertIn("script_role", route)
-            self.assertIn("script_sensory", route)
-            self.assertIn("script_closing", route)
             self.assertTrue(route["script_title"])
             self.assertNotEqual(route["script_title"], route["route_name"])
             self.assertNotIn("路线推荐", route["script_title"])
-            self.assertTrue(route["script_opening"])
-            self.assertTrue(route["script_role"])
-            self.assertTrue(route["script_closing"])
-            for sensory_key in ("see", "hear", "smell", "do"):
-                self.assertIn(sensory_key, route["script_sensory"])
-                self.assertTrue(route["script_sensory"][sensory_key])
-            self.assertGreaterEqual(len(route["script_sections"]), 3)
+            self.assertEqual(len(route["script_sections"]), len(route["spots"]))
             for section in route["script_sections"]:
-                self.assertIn("emotion_experience", section)
-                self.assertIn("action_guide", section)
-                self.assertIn("scene_image", section)
-                self.assertTrue(section["emotion_experience"])
-                self.assertTrue(section["action_guide"])
-                self.assertTrue(section["scene_image"])
-                if section["type"] == "spot":
-                    self.assertIn("spot_name", section)
-                    self.assertIn(section["spot_name"], section["text"])
-                    self.assertIn("location", section)
-                    self.assertIn("experience", section)
-                    self.assertIn("emotion_shift", section)
-                    self.assertTrue(section["location"])
-                    self.assertTrue(section["experience"])
-                    self.assertTrue(section["emotion_shift"])
+                self.assertEqual(section["type"], "spot")
+                self.assertIn("spot_id", section)
+                self.assertIn("spot_name", section)
+                self.assertIn("title", section)
+                self.assertIn("text", section)
+                self.assertIn("paragraphs", section)
+                self.assertTrue(section["paragraphs"])
+                self.assertIn(section["spot_name"], section["text"])
             for spot in route["spots"]:
                 self.assertIn("spot_id", spot)
                 self.assertIn("name", spot)
@@ -145,34 +124,29 @@ class AppTest(unittest.TestCase):
                     "R03": {
                         "script": "这是一条由千问生成的真实路线文案。",
                         "script_title": "在梧桐影里慢慢静下来",
-                        "script_opening": "如果今天的你有点累，这条路线会把你从武康路的树影里慢慢接住。",
-                        "script_role": "今天的你是今天的主角，不需要完成任务。",
-                        "script_sensory": {
-                            "see": "梧桐树影、老建筑轮廓和街角橱窗。",
-                            "hear": "脚步声、风声和远处车流。",
-                            "smell": "咖啡香、植物和雨后路面。",
-                            "do": "慢走、停留、拍照、发呆。",
-                        },
-                        "script_closing": "情绪落点：你会把这段安静带回今天。",
                         "script_sections": [
                             {
-                                "type": "opening",
-                                "title": "开场",
-                                "text": "你从武康路的树影里进入这条路线。",
-                            },
-                            {
                                 "type": "spot",
-                                "spot_id": "S03-01",
+                                "spot_id": "S007",
                                 "spot_name": "武康大楼",
-                                "title": "第一幕｜武康大楼",
-                                "location": "武康大楼",
-                                "experience": "慢走、看老建筑、拍一张低饱和照片。",
-                                "emotion_shift": "从疲惫变得松弛。",
+                                "title": "第一幕｜树影先替你慢下来。",
+                                "paragraphs": ["先把视线交给武康大楼。"],
                                 "text": "先把视线交给武康大楼。",
                             },
                             {
-                                "type": "closing",
-                                "title": "收束",
+                                "type": "spot",
+                                "spot_id": "S008",
+                                "spot_name": "徐家汇书院",
+                                "title": "第二幕｜顺着阅读继续往里走。",
+                                "paragraphs": ["在书院里把节奏留给自己。"],
+                                "text": "在书院里把节奏留给自己。",
+                            },
+                            {
+                                "type": "spot",
+                                "spot_id": "S009",
+                                "spot_name": "巴金故居",
+                                "title": "第三幕｜把安静带回今天。",
+                                "paragraphs": ["最后把这段安静带回今天。"],
                                 "text": "最后把这段安静带回今天。",
                             },
                         ],
@@ -195,9 +169,8 @@ class AppTest(unittest.TestCase):
         self.assertEqual(data["routes"][0]["route_id"], "R03")
         self.assertEqual(data["routes"][0]["script"], "这是一条由千问生成的真实路线文案。")
         self.assertEqual(data["routes"][0]["script_title"], "在梧桐影里慢慢静下来")
-        self.assertEqual(data["routes"][0]["script_sensory"]["do"], "慢走、停留、拍照、发呆。")
-        self.assertEqual(data["routes"][0]["script_sections"][1]["spot_name"], "武康大楼")
-        self.assertEqual(data["routes"][0]["script_sections"][1]["emotion_shift"], "从疲惫变得松弛。")
+        self.assertEqual(data["routes"][0]["script_sections"][0]["spot_name"], "武康大楼")
+        self.assertEqual(data["routes"][0]["script_sections"][0]["paragraphs"][0], "先把视线交给武康大楼。")
         self.assertEqual(data["routes"][0]["script_source"], "qwen")
         self.assertTrue(
             all(route["script_source"] == "fallback" for route in data["routes"][1:])
@@ -233,13 +206,9 @@ class AppTest(unittest.TestCase):
         self.assertEqual(data["routes"][0]["spots"][0]["name"], "外滩")
         self.assertEqual(data["routes"][0]["script_source"], "fallback")
         self.assertTrue(data["routes"][0]["script_title"])
-        self.assertIn("script_sensory", data["routes"][0])
-        self.assertIn("情绪落点", data["routes"][0]["script_closing"])
-        self.assertTrue(data["routes"][0]["script_sections"][0]["emotion_experience"])
-        self.assertTrue(data["routes"][0]["script_sections"][1]["action_guide"])
-        self.assertTrue(data["routes"][0]["script_sections"][1]["scene_image"])
-        self.assertTrue(data["routes"][0]["script_sections"][1]["experience"])
-        self.assertTrue(data["routes"][0]["script_sections"][1]["emotion_shift"])
+        self.assertTrue(all(section["type"] == "spot" for section in data["routes"][0]["script_sections"]))
+        self.assertTrue(data["routes"][0]["script_sections"][0]["paragraphs"])
+        self.assertIn("外滩", data["routes"][0]["script_sections"][0]["text"])
 
     def test_generate_script_endpoint_requires_current_input_before_profile_enhancement(self):
         from app import app
