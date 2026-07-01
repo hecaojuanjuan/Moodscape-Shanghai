@@ -10,8 +10,9 @@ class ConfigurationTest(unittest.TestCase):
         requirements = (PROJECT_ROOT / "requirements.txt").read_text(encoding="utf-8")
         env_example = (PROJECT_ROOT / ".env.example").read_text(encoding="utf-8")
 
-        self.assertIn("openai", requirements.lower())
-        self.assertIn("python-dotenv", requirements.lower())
+        for dependency in ["flask", "openpyxl", "openai", "python-dotenv"]:
+            self.assertIn(dependency, requirements.lower())
+
         for variable in [
             "QWEN_API_KEY",
             "QWEN_BASE_URL",
@@ -28,7 +29,11 @@ class ConfigurationTest(unittest.TestCase):
         self.assertIn("百炼千问", readme)
         self.assertIn("高德地图", readme)
         self.assertIn(".env.example", readme)
-        self.assertIn("本地回退", readme)
+        for dependency in ["Flask", "openpyxl", "openai", "python-dotenv"]:
+            self.assertIn(dependency, readme)
+        self.assertIn("优先使用千问", readme)
+        self.assertIn("本地模板", readme)
+        self.assertIn("来源", readme)
 
 
 if __name__ == "__main__":

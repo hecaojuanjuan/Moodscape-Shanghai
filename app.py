@@ -2,7 +2,7 @@ import os
 
 from flask import Flask, jsonify, render_template, request
 
-from services.recommender import load_mindset_tags, load_tags, recommend_route, recommend_routes
+from services.recommender import load_mindset_tags, load_tags, recommend_routes
 from services.qwen_service import QwenService
 
 
@@ -59,13 +59,32 @@ def generate_script_api():
         inferred_mindset_tags=intent["inferred_mindset_tags"],
         limit=3,
     )
-    generated_scripts = _generate_route_scripts(routes, user_text, intent)
-    for route in routes:
-        generated_script = generated_scripts.get(route.get("route_id"))
-        uses_qwen_script = _script_payload_is_complete(generated_script, route)
-        script_payload = generated_script if uses_qwen_script else generate_excel_script_payload(route, user_text, intent)
-        _apply_script_payload(route, script_payload)
-        route["script_source"] = "qwen" if uses_qwen_script else "fallback"
+    generated_scripts = {}
+    fallback_error_code = ""
+    if not qwen_service.enabled:
+        fallback_error_code = "qwen_not_configured"
+    else:
+        generated_scripts = _generate_route_scripts(routes, user_text, intent)
+
+    missing_routes = [
+        route.get("route_name", route.get("route_id", ""))
+        for route in routes
+        if not _script_payload_is_complete(generated_scripts.get(route.get("route_id")), route)
+    ]
+    if missing_routes:
+        fallback_error_code = fallback_error_code or getattr(qwen_service, "last_script_error", "") or "qwen_incomplete_response"
+        source_message = _script_source_message("fallback", fallback_error_code)
+        for route in routes:
+            _apply_script_payload(route, _generate_fallback_script_payload(route))
+            route["script_source"] = "fallback"
+            route["script_source_message"] = source_message
+    else:
+        source_message = _script_source_message("qwen")
+        for route in routes:
+            generated_script = generated_scripts.get(route.get("route_id"))
+            _apply_script_payload(route, generated_script)
+            route["script_source"] = "qwen"
+            route["script_source_message"] = source_message
 
     first_route = routes[0] if routes else {}
     return jsonify(
@@ -81,6 +100,8 @@ def generate_script_api():
             "recommendation_reason": first_route.get("match_reason", ""),
             "spots": first_route.get("spots", []),
             "intent": intent,
+            "script_source": first_route.get("script_source", ""),
+            "script_source_message": first_route.get("script_source_message", ""),
         }
     )
 
@@ -166,9 +187,11 @@ def _analyze_intent(user_text):
 
 
 def _generate_route_scripts(routes, user_text, intent):
+    qwen_service.last_script_error = ""
     try:
         return qwen_service.generate_route_scripts(routes, user_text, intent)
     except Exception:
+        qwen_service.last_script_error = "qwen_request_failed"
         return {}
 
 
@@ -191,6 +214,106 @@ SCRIPT_PAYLOAD_KEYS = (
 def _apply_script_payload(route, script_payload):
     for key in SCRIPT_PAYLOAD_KEYS:
         route[key] = script_payload.get(key, [] if key == "script_sections" else "")
+
+
+def _generate_fallback_script_payload(route):
+    spots = route.get("spots", [])
+    sections = [
+        _generate_fallback_script_section(spot, index)
+        for index, spot in enumerate(spots, start=1)
+    ]
+    spot_names = "、".join(spot.get("name", "") for spot in spots if spot.get("name"))
+    route_name = _script_part(route.get("route_name")) or "这条路线"
+    script = (
+        f"这是本地模板生成的分幕剧本，沿着{spot_names or route_name}慢慢展开。"
+        "它保留真实点位顺序和必要事实，也把此刻的情绪放轻一点。"
+    )
+    return {
+        "script": script,
+        "script_title": _fallback_script_title(route),
+        "script_sections": sections,
+    }
+
+
+def _generate_fallback_script_section(spot, index):
+    spot_name = _script_part(spot.get("name")) or f"第{index}站"
+    description = _trim_sentence(spot.get("description"), 34)
+    keywords = "、".join((spot.get("feedback_keywords") or [])[:2])
+    paragraphs = [
+        f"来到{spot_name}，先让脚步比刚才更慢一点。",
+        _fallback_spot_fact_sentence(spot_name, description, keywords),
+        _fallback_spot_mood_sentence(index),
+    ]
+    text = "\n\n".join(paragraphs)
+    return {
+        "type": "spot",
+        "spot_id": _script_part(spot.get("spot_id")),
+        "spot_name": spot_name,
+        "title": f"{_section_number(index)}幕｜{_fallback_scene_title(spot_name, keywords, index)}",
+        "text": text,
+        "paragraphs": paragraphs,
+    }
+
+
+def _fallback_script_title(route):
+    angle = _script_part(route.get("ai_script_angle"))
+    route_name = _script_part(route.get("route_name"))
+    if angle and angle != route_name and "路线推荐" not in angle:
+        return f"{angle}里的慢慢停留"
+    return "把脚步交还给城市的一段路"
+
+
+def _fallback_scene_title(spot_name, keywords, index):
+    scene_titles = [
+        "先把脚步放慢。",
+        "把注意力留在这里。",
+        "让城市声音低下来。",
+        "继续往轻一点的地方走。",
+        "把今天慢慢收好。",
+    ]
+    if keywords:
+        first_keyword = keywords.split("、")[0]
+        return f"{first_keyword}在这里停一停。"
+    if spot_name:
+        return f"{spot_name}先替你停留。"
+    return scene_titles[(index - 1) % len(scene_titles)]
+
+
+def _fallback_spot_fact_sentence(spot_name, description, keywords):
+    if description:
+        return f"{spot_name}的重点不必急着看完，{description}"
+    if keywords:
+        return f"这里适合{keywords}，也适合把注意力从行程表里收回来。"
+    return "这里不需要被匆忙解释，留一点空白给现场就好。"
+
+
+def _fallback_spot_mood_sentence(index):
+    sentences = [
+        "不必急着赶往下一站，等这一幕的情绪自然安静下来。",
+        "如果愿意，可以多停一会儿，让今天的节奏重新变得柔和。",
+        "走到这里时，真正被放慢的也许是一直紧绷的注意力。",
+    ]
+    return sentences[(index - 1) % len(sentences)]
+
+
+def _trim_sentence(value, max_length):
+    text = _script_part(value)
+    if len(text) <= max_length:
+        return text
+    return f"{text[:max_length].rstrip()}。"
+
+
+def _script_source_message(source, error_code=""):
+    if source == "qwen":
+        return "来自千问。"
+    fallback_reasons = {
+        "qwen_not_configured": "千问未配置",
+        "qwen_request_failed": "千问调用失败",
+        "qwen_invalid_response": "千问返回格式不正确",
+        "qwen_incomplete_response": "千问返回不完整",
+    }
+    reason = fallback_reasons.get(error_code, "千问未成功返回")
+    return f"本地模板，{reason}。"
 
 
 def _script_payload_is_complete(script_payload, route=None):
@@ -220,215 +343,6 @@ def _script_payload_is_complete(script_payload, route=None):
     return not expected_spot_keys or section_spot_keys == expected_spot_keys
 
 
-def generate_excel_script_payload(route, user_text="", intent=None):
-    if not route:
-        return {
-            "script": "",
-            "script_sections": [],
-            "script_title": "",
-        }
-
-    context = _script_context(route, user_text, intent)
-    sections = generate_excel_script_sections(route, user_text, intent, context=context)
-    script_title = _script_title(route, context)
-    script = generate_excel_script(
-        route,
-        sections,
-        script_title=script_title,
-    )
-    return {
-        "script": script,
-        "script_sections": sections,
-        "script_title": script_title,
-    }
-
-
-def generate_excel_script(
-    route,
-    script_sections=None,
-    script_title="",
-):
-    if not route:
-        return ""
-
-    sections = script_sections or generate_excel_script_sections(route)
-    spot_names = [
-        section.get("spot_name", "")
-        for section in sections
-        if section.get("type") == "spot" and section.get("spot_name")
-    ]
-    scene_lines = [
-        _first_paragraph(section)
-        for section in sections
-        if section.get("type") == "spot"
-    ][:3]
-
-    return "。".join(
-        part
-        for part in [
-            _script_part(script_title) or "把自己还给自己的半日",
-            f"真实场景会依次经过{'、'.join(spot_names)}" if spot_names else "",
-            "每一幕都沿着真实点位展开，让情绪在路上慢慢放缓",
-            "。".join(_script_part(line) for line in scene_lines if line),
-        ]
-        if part
-    )
-
-
-def generate_excel_script_sections(route, user_text="", intent=None, context=None):
-    if not route:
-        return []
-
-    context = context or _script_context(route, user_text, intent)
-    sections = []
-
-    spots = route.get("spots", [])
-    total_spots = len(spots)
-    for index, spot in enumerate(spots, start=1):
-        spot_name = _script_part(spot.get("name", ""))
-        description = _script_part(spot.get("description", ""))
-        keywords = "、".join(spot.get("feedback_keywords", []))
-        paragraphs = _spot_script_paragraphs(
-            spot_name=spot_name,
-            description=description,
-            keywords=keywords,
-            index=index,
-            total_spots=total_spots,
-            context=context,
-        )
-        text = "\n\n".join(paragraphs)
-        sections.append(
-            {
-                "type": "spot",
-                "spot_id": str(spot.get("spot_id", "")).strip(),
-                "spot_name": spot_name,
-                "title": _spot_scene_title(index, spot_name, keywords, context),
-                "text": text or "这一站适合放慢脚步，给路线留出一点停顿。",
-                "paragraphs": paragraphs,
-            }
-        )
-    return sections
-
-
-def _script_context(route, user_text, intent):
-    summary = _script_part((intent or {}).get("summary", ""))
-    mood_source = summary or _script_part(user_text)
-    matched_moods = [
-        *route.get("matched_mindsets", []),
-        *route.get("dominant_mindsets", []),
-        *route.get("matched_tags", []),
-    ]
-    if not mood_source and matched_moods:
-        mood_source = "、".join(str(mood).strip() for mood in matched_moods[:3] if str(mood).strip())
-    mood = mood_source or _script_part(route.get("suitable_mood", "")) or "想让今天慢一点"
-    start_emotion = mood[:28]
-    end_emotion = _ending_emotion(route, mood)
-    return {
-        "mood": mood,
-        "start_emotion": start_emotion,
-        "end_emotion": end_emotion,
-    }
-
-
-def _script_title(route, context):
-    route_text = _route_story_text(route, context)
-    if any(word in route_text for word in ["天文", "海洋", "临港", "滴水湖"]):
-        return "今天的脚步终于慢了下来"
-    if any(word in route_text for word in ["武康", "梧桐"]):
-        return "在梧桐影里慢慢静下来"
-    if any(word in route_text for word in ["独处", "安静", "低噪音", "疗愈", "慢"]):
-        return "把自己还给自己的半日"
-    if any(word in route_text for word in ["夜景", "灯光", "外滩", "江", "浪漫"]):
-        return "把今天交给灯光收好"
-    if any(word in route_text for word in ["公园", "自然", "滨江", "松弛"]):
-        return "逃离喧闹的三小时"
-    if any(word in route_text for word in ["灵感", "艺术", "看展", "设计"]):
-        return "让灵感重新亮起来"
-    if any(word in route_text for word in ["怀旧", "老上海", "历史", "文学"]):
-        return "和旧时光并肩慢走"
-    if any(word in route_text for word in ["探索", "冷门", "隐藏", "工业"]):
-        return "拐进城市隐藏的一页"
-    return "一个人的城市低语"
-
-
-def _first_paragraph(section):
-    paragraphs = section.get("paragraphs")
-    if isinstance(paragraphs, list):
-        for paragraph in paragraphs:
-            clean_paragraph = _script_part(paragraph)
-            if clean_paragraph:
-                return clean_paragraph
-    text = _script_part(section.get("text", ""))
-    return text.splitlines()[0].strip() if text else ""
-
-
-def _spot_script_paragraphs(spot_name, description, keywords, index, total_spots, context):
-    scene = _spot_scene_sentence(spot_name, description, keywords, index, total_spots)
-    action = _spot_action_sentence(spot_name, index, total_spots, keywords, context)
-    emotion = _emotion_stage(index, total_spots, context)
-
-    paragraphs = [
-        scene,
-        f"如果不赶时间，{action}",
-        f"也许走到这里的时候，你会发现真正放松下来的不是身体，而是一直紧绷着的注意力。{emotion}",
-    ]
-    return [paragraph for paragraph in paragraphs if paragraph]
-
-
-def _spot_scene_title(index, spot_name, keywords, context):
-    if "天文" in spot_name:
-        scene_title = "宇宙仍在头顶。"
-    elif "海昌" in spot_name or "海洋" in spot_name:
-        scene_title = "海风把思绪放慢。"
-    elif "滴水湖" in spot_name or spot_name.endswith("湖"):
-        scene_title = "回到开阔的风里。"
-    elif "武康" in spot_name or "梧桐" in keywords:
-        scene_title = "树影先替你慢下来。"
-    elif "外滩" in spot_name or "江" in spot_name:
-        scene_title = "灯光把城市放远。"
-    elif index == 1:
-        scene_title = "从第一步开始降噪。"
-    elif keywords:
-        scene_title = f"顺着{keywords.split('、')[0]}继续往里走。"
-    else:
-        scene_title = "把脚步交给城市。"
-    return f"{_section_number(index)}幕｜{scene_title}" if spot_name else f"{_section_number(index)}幕"
-
-
-def _route_story_text(route, context):
-    parts = [
-        route.get("route_name", ""),
-        route.get("route_intro_user_facing", ""),
-        route.get("ai_script_angle", ""),
-        route.get("match_reason", ""),
-        route.get("suitable_mood", ""),
-        " ".join(route.get("matched_mindsets", [])),
-        " ".join(route.get("dominant_mindsets", [])),
-        " ".join(route.get("matched_tags", [])),
-        context.get("mood", "") if context else "",
-    ]
-    for spot in route.get("spots", []):
-        parts.extend(
-            [
-                spot.get("name", ""),
-                spot.get("description", ""),
-                " ".join(spot.get("feedback_keywords", [])),
-            ]
-        )
-    return " ".join(str(part or "") for part in parts)
-
-
-def _spot_phrase(route, limit=None):
-    names = [
-        _script_part(spot.get("name", ""))
-        for spot in route.get("spots", [])
-        if _script_part(spot.get("name", ""))
-    ]
-    if limit:
-        names = names[:limit]
-    return "、".join(names)
-
-
 def _spot_key(value):
     spot_id = _script_part(value.get("spot_id", ""))
     if spot_id:
@@ -437,64 +351,6 @@ def _spot_key(value):
     if spot_name:
         return f"name:{spot_name}"
     return ""
-
-
-def _ending_emotion(route, mood):
-    route_text = " ".join(
-        str(part or "")
-        for part in [
-            route.get("route_name", ""),
-            route.get("ai_script_angle", ""),
-            route.get("match_reason", ""),
-            " ".join(route.get("matched_mindsets", [])),
-            " ".join(route.get("matched_tags", [])),
-            mood,
-        ]
-    )
-    if any(word in route_text for word in ["夜景", "浪漫", "灯光"]):
-        return "被城市灯光慢慢照亮"
-    if any(word in route_text for word in ["灵感", "艺术", "看展", "设计"]):
-        return "重新被灵感打开"
-    if any(word in route_text for word in ["怀旧", "老上海", "历史", "文学"]):
-        return "和城市旧时光轻轻相认"
-    if any(word in route_text for word in ["探索", "冷门", "工业", "隐藏"]):
-        return "对未知角落多一点好奇"
-    if any(word in route_text for word in ["社交", "约会", "朋友"]):
-        return "把关系里的温度放松下来"
-    return "在真实街道里慢慢安静下来"
-
-
-def _emotion_stage(index, total_spots, context):
-    if total_spots <= 1 or index == 1:
-        return f"先从{context['start_emotion']}里抽离一点，把注意力交给眼前的城市。"
-    if index == total_spots:
-        return f"走到这里，心情开始从游离变得清楚，靠近{context['end_emotion']}。"
-    return "前一站留下的安静继续发酵，新的场景把情绪往更深处推了一步。"
-
-
-def _spot_action_sentence(spot_name, index, total_spots, keywords, context):
-    if index == 1:
-        return f"在{spot_name or '这一站'}先停一会儿，只选一个细节观察，让身体比计划先到场。"
-    if total_spots and index == total_spots:
-        return f"在{spot_name or '最后一站'}放慢收尾，回想一路上哪个画面最贴近{context['mood']}。"
-    if keywords:
-        return f"在{spot_name or '这一站'}把脚步放轻，顺着{keywords}里最打动你的一个词继续走。"
-    return f"在{spot_name or '这一站'}留出几分钟空白，不急着切换到下一处。"
-
-
-def _spot_scene_sentence(spot_name, description, keywords, index, total_spots):
-    name = spot_name or "这一站"
-    detail = description or keywords
-    if index == 1:
-        lead = f"来到{name}的时候，今天的节奏先被按低了一点。"
-    elif total_spots and index == total_spots:
-        lead = f"到了{name}，前面几站留下的画面开始松开。"
-    else:
-        lead = f"从上一站离开以后，{name}把路线带向另一种声音。"
-
-    if detail:
-        return f"{lead}{detail}，会成为这一幕里最先浮出来的画面。"
-    return f"{lead}城市在这里留下一点空白，让脚步有地方慢下来。"
 
 
 def _script_part(value):

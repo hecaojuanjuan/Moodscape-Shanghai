@@ -123,11 +123,15 @@ recommendForm.addEventListener("submit", async (event) => {
       }),
     });
 
-    if (!response.ok) {
-      throw new Error("生成接口暂时不可用，请稍后再试。");
+    let data = {};
+    try {
+      data = await response.json();
+    } catch (error) {
+      data = {};
     }
-
-    const data = await response.json();
+    if (!response.ok || data.error) {
+      throw new Error(data.message || "生成接口暂时不可用，请稍后再试。");
+    }
     if (data.needs_input) {
       showNeedsInput(data.message || needsInputMessage);
       return;
@@ -554,6 +558,10 @@ function renderScriptContent(route) {
     ? route.script_sections.filter((section) => section && section.type === "spot" && section.title && section.text)
     : [];
   const scriptTitle = route.script_title || "沉浸式城市剧本";
+  const sourceBadge = getScriptSourceBadge(route);
+  const sourceMessage = route.script_source === "fallback"
+    ? route.script_source_message || "千问未成功返回，当前为本地模板。"
+    : "";
 
   if (!sections.length) {
     return `<p>${escapeHtml(route.script)}</p>`;
@@ -561,12 +569,26 @@ function renderScriptContent(route) {
 
   return `
     <div class="script-story">
-      <h4 class="script-story-title">${escapeHtml(scriptTitle)}</h4>
+      <div class="script-story-heading">
+        <h4 class="script-story-title">${escapeHtml(scriptTitle)}</h4>
+        ${sourceBadge}
+      </div>
+      ${sourceMessage ? `<p class="script-source-note">${escapeHtml(sourceMessage)}</p>` : ""}
       <div class="script-section-list script-scene-list">
         ${sections.map((section, index) => renderScriptScene(section, index)).join("")}
       </div>
     </div>
   `;
+}
+
+function getScriptSourceBadge(route) {
+  if (route.script_source === "qwen") {
+    return '<span class="script-source-badge">来自千问</span>';
+  }
+  if (route.script_source === "fallback") {
+    return '<span class="script-source-badge is-fallback">本地模板</span>';
+  }
+  return "";
 }
 
 function renderScriptScene(section, index) {

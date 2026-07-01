@@ -92,6 +92,7 @@ class QwenServiceTest(unittest.TestCase):
 
         self.assertEqual(intent["source"], "fallback")
         self.assertEqual(scripts, {})
+        self.assertEqual(service.last_script_error, "qwen_not_configured")
 
     def test_generate_route_scripts_returns_structured_sections_and_filters_invalid_items(self):
         client = FakeClient(
@@ -174,6 +175,7 @@ class QwenServiceTest(unittest.TestCase):
         self.assertTrue(all(section["type"] == "spot" for section in script["script_sections"]))
         self.assertEqual(script["script_sections"][0]["spot_name"], "第一站")
         self.assertEqual(script["script_sections"][0]["paragraphs"][0], "先把脚步放慢，留意街角的安静。")
+        self.assertEqual(service.last_script_error, "qwen_incomplete_response")
         self.assertEqual(routes, original_routes)
 
     def test_generate_route_scripts_prompt_includes_immersive_route_context(self):
@@ -266,6 +268,19 @@ class QwenServiceTest(unittest.TestCase):
         )
 
         self.assertEqual(scripts, {})
+        self.assertEqual(service.last_script_error, "qwen_incomplete_response")
+
+    def test_generate_route_scripts_records_request_failure(self):
+        service = QwenService(api_key="test-key", client=FakeClient([TimeoutError("timed out")]))
+
+        scripts = service.generate_route_scripts(
+            routes=[_route("R01", "路线一")],
+            user_text="想安静散步",
+            intent={"summary": "安静散步", "source": "qwen"},
+        )
+
+        self.assertEqual(scripts, {})
+        self.assertEqual(service.last_script_error, "qwen_request_failed")
 
     def test_generate_route_scripts_requires_all_route_spots_in_order(self):
         client = FakeClient(
@@ -303,6 +318,7 @@ class QwenServiceTest(unittest.TestCase):
         )
 
         self.assertEqual(scripts, {})
+        self.assertEqual(service.last_script_error, "qwen_incomplete_response")
 
 
 def _route(route_id, name):

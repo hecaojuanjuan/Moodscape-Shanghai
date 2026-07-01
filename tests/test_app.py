@@ -19,15 +19,16 @@ class AppTest(unittest.TestCase):
     def test_generate_script_endpoint_returns_multiple_excel_routes(self):
         import app as app_module
 
-        fallback_intent = {
+        intent = {
             "summary": "低噪音 慢节奏 可独处 可停留",
             "inferred_experience_tags": [],
             "inferred_mindset_tags": [],
-            "source": "fallback",
+            "source": "qwen",
         }
         with (
-            patch.object(app_module.qwen_service, "analyze_intent", return_value=fallback_intent),
-            patch.object(app_module.qwen_service, "generate_route_scripts", return_value={}),
+            patch.object(app_module.qwen_service, "api_key", "test-key"),
+            patch.object(app_module.qwen_service, "analyze_intent", return_value=intent),
+            patch.object(app_module.qwen_service, "generate_route_scripts", side_effect=_qwen_scripts_for_routes),
         ):
             client = app_module.app.test_client()
             response = client.post(
@@ -102,11 +103,11 @@ class AppTest(unittest.TestCase):
                 self.assertIn("description", spot)
                 self.assertIn("open_time", spot)
                 self.assertIn("ticket_reservation", spot)
-            self.assertEqual(route["script_source"], "fallback")
+            self.assertEqual(route["script_source"], "qwen")
 
-        self.assertEqual(data["intent"], fallback_intent)
+        self.assertEqual(data["intent"], intent)
 
-    def test_generate_script_uses_qwen_intent_and_partially_falls_back(self):
+    def test_generate_script_uses_fallback_when_qwen_omits_any_route_script(self):
         import app as app_module
 
         intent = {
@@ -116,6 +117,7 @@ class AppTest(unittest.TestCase):
             "source": "qwen",
         }
         with (
+            patch.object(app_module.qwen_service, "api_key", "test-key"),
             patch.object(app_module.qwen_service, "analyze_intent", return_value=intent),
             patch.object(
                 app_module.qwen_service,
@@ -165,19 +167,22 @@ class AppTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
-        self.assertEqual(data["intent"], intent)
-        self.assertEqual(data["routes"][0]["route_id"], "R03")
-        self.assertEqual(data["routes"][0]["script"], "这是一条由千问生成的真实路线文案。")
-        self.assertEqual(data["routes"][0]["script_title"], "在梧桐影里慢慢静下来")
-        self.assertEqual(data["routes"][0]["script_sections"][0]["spot_name"], "武康大楼")
-        self.assertEqual(data["routes"][0]["script_sections"][0]["paragraphs"][0], "先把视线交给武康大楼。")
-        self.assertEqual(data["routes"][0]["script_source"], "qwen")
-        self.assertTrue(
-            all(route["script_source"] == "fallback" for route in data["routes"][1:])
-        )
-        self.assertTrue(
-            all(route["script_sections"] for route in data["routes"][1:])
-        )
+        self.assertEqual(len(data["routes"]), 3)
+        self.assertEqual(data["route"], data["routes"][0])
+        self.assertEqual(data["script"], data["routes"][0]["script"])
+        self.assertEqual(data["script_source"], "fallback")
+        self.assertIn("本地模板", data["script_source_message"])
+        self.assertIn("千问返回不完整", data["script_source_message"])
+        for route in data["routes"]:
+            self.assertEqual(route["script_source"], "fallback")
+            self.assertIn("本地模板", route["script_source_message"])
+            self.assertEqual(len(route["script_sections"]), len(route["spots"]))
+            for section, spot in zip(route["script_sections"], route["spots"]):
+                self.assertEqual(section["type"], "spot")
+                self.assertEqual(section["spot_id"], spot["spot_id"])
+                self.assertEqual(section["spot_name"], spot["name"])
+                self.assertIn("paragraphs", section)
+                self.assertTrue(section["paragraphs"])
 
     def test_qwen_intent_can_drive_ranking_without_changing_route_data(self):
         import app as app_module
@@ -189,6 +194,7 @@ class AppTest(unittest.TestCase):
             "source": "qwen",
         }
         with (
+            patch.object(app_module.qwen_service, "api_key", "test-key"),
             patch.object(app_module.qwen_service, "analyze_intent", return_value=intent),
             patch.object(app_module.qwen_service, "generate_route_scripts", return_value={}),
         ):
@@ -201,14 +207,65 @@ class AppTest(unittest.TestCase):
                 },
             )
 
+        self.assertEqual(response.status_code, 200)
         data = response.get_json()
-        self.assertEqual(data["routes"][0]["route_id"], "R01")
-        self.assertEqual(data["routes"][0]["spots"][0]["name"], "外滩")
-        self.assertEqual(data["routes"][0]["script_source"], "fallback")
-        self.assertTrue(data["routes"][0]["script_title"])
-        self.assertTrue(all(section["type"] == "spot" for section in data["routes"][0]["script_sections"]))
-        self.assertTrue(data["routes"][0]["script_sections"][0]["paragraphs"])
-        self.assertIn("外滩", data["routes"][0]["script_sections"][0]["text"])
+        self.assertEqual(len(data["routes"]), 3)
+        self.assertEqual(data["intent"], intent)
+        self.assertTrue(all(route["script_source"] == "fallback" for route in data["routes"]))
+        self.assertIn("本地模板", data["script_source_message"])
+
+    def test_generate_script_uses_fallback_when_qwen_is_not_configured(self):
+        import app as app_module
+
+        with patch.object(app_module.qwen_service, "api_key", ""):
+            client = app_module.app.test_client()
+            response = client.post(
+                "/api/generate-script",
+                json={
+                    "selected_tags": ["想一个人静静"],
+                    "user_text": "想安静地慢慢走",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(len(data["routes"]), 3)
+        self.assertEqual(data["script_source"], "fallback")
+        self.assertIn("本地模板", data["script_source_message"])
+        self.assertIn("千问未配置", data["script_source_message"])
+        self.assertTrue(all(route["script_source"] == "fallback" for route in data["routes"]))
+        self.assertTrue(
+            all("本地模板" in route["script_source_message"] for route in data["routes"])
+        )
+
+    def test_generate_script_uses_fallback_when_qwen_request_fails(self):
+        import app as app_module
+
+        intent = {
+            "summary": "想慢慢走",
+            "inferred_experience_tags": [],
+            "inferred_mindset_tags": [],
+            "source": "qwen",
+        }
+        with (
+            patch.object(app_module.qwen_service, "api_key", "test-key"),
+            patch.object(app_module.qwen_service, "analyze_intent", return_value=intent),
+            patch.object(app_module.qwen_service, "generate_route_scripts", side_effect=TimeoutError("timed out")),
+        ):
+            client = app_module.app.test_client()
+            response = client.post(
+                "/api/generate-script",
+                json={
+                    "selected_tags": ["想一个人静静"],
+                    "user_text": "想慢慢走",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(len(data["routes"]), 3)
+        self.assertTrue(all(route["script_source"] == "fallback" for route in data["routes"]))
+        self.assertIn("千问调用失败", data["script_source_message"])
 
     def test_generate_script_endpoint_requires_current_input_before_profile_enhancement(self):
         from app import app
@@ -278,6 +335,34 @@ class AppTest(unittest.TestCase):
         self.assertFalse(data["needs_input"])
         self.assertGreater(data["routes"][0]["profile_similarity"], 0)
         self.assertIn("安静", data["routes"][0]["matched_profile_traits"])
+
+
+def _qwen_scripts_for_routes(routes, user_text, intent):
+    scripts = {}
+    for route in routes:
+        sections = []
+        for index, spot in enumerate(route["spots"], start=1):
+            spot_name = spot["name"]
+            paragraphs = [
+                f"{spot_name}让第{index}幕从真实地点展开。",
+                f"你可以顺着{spot_name}的节奏慢慢停留。",
+            ]
+            sections.append(
+                {
+                    "type": "spot",
+                    "spot_id": spot["spot_id"],
+                    "spot_name": spot_name,
+                    "title": f"第{index}幕｜{spot_name}",
+                    "text": "\n\n".join(paragraphs),
+                    "paragraphs": paragraphs,
+                }
+            )
+        scripts[route["route_id"]] = {
+            "script": f"这是一条由千问生成的真实路线文案，带着情绪经过{'、'.join(spot['name'] for spot in route['spots'])}。",
+            "script_title": f"{route['route_name']}的千问剧本",
+            "script_sections": sections,
+        }
+    return scripts
 
 
 if __name__ == "__main__":

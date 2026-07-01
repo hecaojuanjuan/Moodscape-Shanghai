@@ -25,6 +25,7 @@ class QwenService:
         )
         self._provided_client = client
         self._client_instance = None
+        self.last_script_error = ""
 
     @property
     def enabled(self):
@@ -76,7 +77,10 @@ class QwenService:
         }
 
     def generate_route_scripts(self, routes, user_text, intent):
+        self.last_script_error = ""
         if not self.enabled or not routes:
+            if not self.enabled:
+                self.last_script_error = "qwen_not_configured"
             return {}
 
         route_payloads = [_route_prompt_payload(route) for route in routes]
@@ -137,6 +141,7 @@ class QwenService:
                 temperature=0.45,
             )
         except Exception:
+            self.last_script_error = "qwen_request_failed"
             return {}
 
         allowed_routes = {
@@ -147,6 +152,7 @@ class QwenService:
         scripts = {}
         raw_scripts = result.get("scripts")
         if not isinstance(raw_scripts, list):
+            self.last_script_error = "qwen_invalid_response"
             return scripts
 
         for item in raw_scripts:
@@ -158,6 +164,8 @@ class QwenService:
             script_payload = _clean_script_payload(item, allowed_routes[route_id])
             if script_payload:
                 scripts[route_id] = script_payload
+        if len(scripts) < len(allowed_routes):
+            self.last_script_error = "qwen_incomplete_response"
         return scripts
 
     def _request_json(self, system_prompt, user_prompt, max_tokens, temperature=0.2):
