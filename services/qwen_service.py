@@ -5,6 +5,11 @@ import os
 DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 DEFAULT_MODEL = "qwen3.5-plus"
 DEFAULT_TIMEOUT_SECONDS = 20.0
+DEFAULT_SCRIPT_TIMEOUT_SECONDS = 45.0
+
+
+class QwenInvalidResponseError(ValueError):
+    pass
 
 
 class QwenService:
@@ -84,12 +89,23 @@ class QwenService:
             return {}
 
         route_payloads = [_route_prompt_payload(route) for route in routes]
+        required_route_ids = [
+            payload["route_id"]
+            for payload in route_payloads
+            if payload.get("route_id")
+        ]
         request_payload = {
             "task": "为候选上海路线分别生成按点位分幕的沉浸旅行剧本：以用户心境为主线、以真实城市点位为场景、以情绪变化为结构。不要生成普通旅游攻略。",
             "user_text": str(user_text or "").strip(),
             "intent": intent or {},
             "routes": route_payloads,
+            "coverage_policy": {
+                "required_route_ids": required_route_ids,
+                "required_scripts_count": len(required_route_ids),
+                "rule": "Return exactly one complete script object for every required_route_id. Do not stop after the first or best route.",
+            },
             "rules": [
+                "scripts must include every route_id listed in coverage_policy.required_route_ids exactly once.",
                 "每个 route_id 最多返回一组剧本。",
                 "只能使用输入中提供的路线和点位。",
                 "不得新增景点、改变点位顺序或虚构开放时间、票务信息、历史事件。",
@@ -139,7 +155,11 @@ class QwenService:
                 user_prompt=json.dumps(request_payload, ensure_ascii=False),
                 max_tokens=3600,
                 temperature=0.45,
+                timeout_seconds=max(self.timeout_seconds, DEFAULT_SCRIPT_TIMEOUT_SECONDS),
             )
+        except QwenInvalidResponseError:
+            self.last_script_error = "qwen_invalid_response"
+            return {}
         except Exception:
             self.last_script_error = "qwen_request_failed"
             return {}
@@ -168,7 +188,14 @@ class QwenService:
             self.last_script_error = "qwen_incomplete_response"
         return scripts
 
-    def _request_json(self, system_prompt, user_prompt, max_tokens, temperature=0.2):
+    def _request_json(
+        self,
+        system_prompt,
+        user_prompt,
+        max_tokens,
+        temperature=0.2,
+        timeout_seconds=None,
+    ):
         response = self._get_client().chat.completions.create(
             model=self.model,
             messages=[
@@ -178,12 +205,18 @@ class QwenService:
             response_format={"type": "json_object"},
             temperature=temperature,
             max_tokens=max_tokens,
-            timeout=self.timeout_seconds,
+            timeout=timeout_seconds or self.timeout_seconds,
         )
-        content = response.choices[0].message.content
-        parsed = json.loads(_strip_code_fence(content))
+        try:
+            content = response.choices[0].message.content
+        except (AttributeError, IndexError, TypeError) as exc:
+            raise QwenInvalidResponseError("Qwen response did not include message content.") from exc
+        try:
+            parsed = json.loads(_strip_code_fence(content))
+        except json.JSONDecodeError as exc:
+            raise QwenInvalidResponseError("Qwen response content was not valid JSON.") from exc
         if not isinstance(parsed, dict):
-            raise ValueError("Qwen response must be a JSON object.")
+            raise QwenInvalidResponseError("Qwen response must be a JSON object.")
         return parsed
 
     def _get_client(self):

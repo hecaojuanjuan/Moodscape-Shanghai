@@ -66,25 +66,23 @@ def generate_script_api():
     else:
         generated_scripts = _generate_route_scripts(routes, user_text, intent)
 
-    missing_routes = [
-        route.get("route_name", route.get("route_id", ""))
-        for route in routes
-        if not _script_payload_is_complete(generated_scripts.get(route.get("route_id")), route)
-    ]
-    if missing_routes:
-        fallback_error_code = fallback_error_code or getattr(qwen_service, "last_script_error", "") or "qwen_incomplete_response"
-        source_message = _script_source_message("fallback", fallback_error_code)
-        for route in routes:
-            _apply_script_payload(route, _generate_fallback_script_payload(route))
-            route["script_source"] = "fallback"
-            route["script_source_message"] = source_message
-    else:
-        source_message = _script_source_message("qwen")
-        for route in routes:
-            generated_script = generated_scripts.get(route.get("route_id"))
+    fallback_error_code = (
+        fallback_error_code
+        or getattr(qwen_service, "last_script_error", "")
+        or "qwen_incomplete_response"
+    )
+    qwen_source_message = _script_source_message("qwen")
+    fallback_source_message = _script_source_message("fallback", fallback_error_code)
+    for route in routes:
+        generated_script = generated_scripts.get(route.get("route_id"))
+        if _script_payload_is_complete(generated_script, route):
             _apply_script_payload(route, generated_script)
             route["script_source"] = "qwen"
-            route["script_source_message"] = source_message
+            route["script_source_message"] = qwen_source_message
+        else:
+            _apply_script_payload(route, _generate_fallback_script_payload(route))
+            route["script_source"] = "fallback"
+            route["script_source_message"] = fallback_source_message
 
     first_route = routes[0] if routes else {}
     return jsonify(

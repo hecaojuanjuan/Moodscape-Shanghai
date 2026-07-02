@@ -107,7 +107,7 @@ class AppTest(unittest.TestCase):
 
         self.assertEqual(data["intent"], intent)
 
-    def test_generate_script_uses_fallback_when_qwen_omits_any_route_script(self):
+    def test_generate_script_uses_qwen_per_route_when_qwen_omits_any_route_script(self):
         import app as app_module
 
         intent = {
@@ -122,38 +122,7 @@ class AppTest(unittest.TestCase):
             patch.object(
                 app_module.qwen_service,
                 "generate_route_scripts",
-                return_value={
-                    "R03": {
-                        "script": "这是一条由千问生成的真实路线文案。",
-                        "script_title": "在梧桐影里慢慢静下来",
-                        "script_sections": [
-                            {
-                                "type": "spot",
-                                "spot_id": "S007",
-                                "spot_name": "武康大楼",
-                                "title": "第一幕｜树影先替你慢下来。",
-                                "paragraphs": ["先把视线交给武康大楼。"],
-                                "text": "先把视线交给武康大楼。",
-                            },
-                            {
-                                "type": "spot",
-                                "spot_id": "S008",
-                                "spot_name": "徐家汇书院",
-                                "title": "第二幕｜顺着阅读继续往里走。",
-                                "paragraphs": ["在书院里把节奏留给自己。"],
-                                "text": "在书院里把节奏留给自己。",
-                            },
-                            {
-                                "type": "spot",
-                                "spot_id": "S009",
-                                "spot_name": "巴金故居",
-                                "title": "第三幕｜把安静带回今天。",
-                                "paragraphs": ["最后把这段安静带回今天。"],
-                                "text": "最后把这段安静带回今天。",
-                            },
-                        ],
-                    }
-                },
+                side_effect=_first_qwen_script_only,
             ),
         ):
             client = app_module.app.test_client()
@@ -170,12 +139,19 @@ class AppTest(unittest.TestCase):
         self.assertEqual(len(data["routes"]), 3)
         self.assertEqual(data["route"], data["routes"][0])
         self.assertEqual(data["script"], data["routes"][0]["script"])
-        self.assertEqual(data["script_source"], "fallback")
-        self.assertIn("本地模板", data["script_source_message"])
-        self.assertIn("千问返回不完整", data["script_source_message"])
-        for route in data["routes"]:
+        self.assertEqual(data["script_source"], "qwen")
+        self.assertIn("来自千问", data["script_source_message"])
+
+        first_route = data["routes"][0]
+        self.assertEqual(first_route["script_source"], "qwen")
+        self.assertIn("来自千问", first_route["script_source_message"])
+        self.assertIn("这是一条由千问生成的真实路线文案", first_route["script"])
+        self.assertEqual(first_route["script_title"], f"{first_route['route_name']}的千问剧本")
+
+        for route in data["routes"][1:]:
             self.assertEqual(route["script_source"], "fallback")
             self.assertIn("本地模板", route["script_source_message"])
+            self.assertIn("千问返回不完整", route["script_source_message"])
             self.assertEqual(len(route["script_sections"]), len(route["spots"]))
             for section, spot in zip(route["script_sections"], route["spots"]):
                 self.assertEqual(section["type"], "spot")
@@ -363,6 +339,14 @@ def _qwen_scripts_for_routes(routes, user_text, intent):
             "script_sections": sections,
         }
     return scripts
+
+
+def _first_qwen_script_only(routes, user_text, intent):
+    scripts = _qwen_scripts_for_routes(routes, user_text, intent)
+    if not routes:
+        return {}
+    first_route_id = routes[0]["route_id"]
+    return {first_route_id: scripts[first_route_id]}
 
 
 if __name__ == "__main__":

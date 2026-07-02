@@ -241,6 +241,55 @@ class QwenServiceTest(unittest.TestCase):
         self.assertIn("ai_script_angle", user_prompt)
         self.assertIn("suitable_mood", user_prompt)
         self.assertIn("feedback_keywords", user_prompt)
+        self.assertIn("coverage_policy", user_prompt)
+        self.assertIn("required_route_ids", user_prompt)
+        self.assertIn('"R01"', user_prompt)
+
+    def test_generate_route_scripts_uses_longer_timeout_for_script_generation(self):
+        client = FakeClient(
+            [
+                json.dumps(
+                    {
+                        "scripts": [
+                            {
+                                "route_id": "R01",
+                                "script": "从第一站开始慢慢走，让城市的声音慢下来。",
+                                "script_title": "把自己还给自己的半日",
+                                "script_sections": [
+                                    {
+                                        "type": "spot",
+                                        "spot_id": "S01",
+                                        "spot_name": "第一站",
+                                        "title": "第一幕｜树影先替你慢下来。",
+                                        "text": "第一幕。",
+                                        "paragraphs": ["第一幕。"],
+                                    },
+                                    {
+                                        "type": "spot",
+                                        "spot_id": "S02",
+                                        "spot_name": "第二站",
+                                        "title": "第二幕｜继续往安静里走。",
+                                        "text": "第二幕。",
+                                        "paragraphs": ["第二幕。"],
+                                    },
+                                ],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+            ]
+        )
+        service = QwenService(api_key="test-key", timeout_seconds=20, client=client)
+
+        service.generate_route_scripts(
+            routes=[_route("R01", "测试路线")],
+            user_text="想安静散步",
+            intent={"summary": "安静散步", "source": "qwen"},
+        )
+
+        request = client.completions.requests[0]
+        self.assertGreaterEqual(request["timeout"], 45)
 
     def test_generate_route_scripts_ignores_invalid_structured_response(self):
         client = FakeClient(
@@ -281,6 +330,18 @@ class QwenServiceTest(unittest.TestCase):
 
         self.assertEqual(scripts, {})
         self.assertEqual(service.last_script_error, "qwen_request_failed")
+
+    def test_generate_route_scripts_records_invalid_json_as_invalid_response(self):
+        service = QwenService(api_key="test-key", client=FakeClient(["not-json"]))
+
+        scripts = service.generate_route_scripts(
+            routes=[_route("R01", "路线一")],
+            user_text="想安静散步",
+            intent={"summary": "安静散步", "source": "qwen"},
+        )
+
+        self.assertEqual(scripts, {})
+        self.assertEqual(service.last_script_error, "qwen_invalid_response")
 
     def test_generate_route_scripts_requires_all_route_spots_in_order(self):
         client = FakeClient(
