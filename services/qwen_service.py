@@ -126,7 +126,7 @@ class QwenService:
                 "script_title 必须有情绪和画面感，禁止只用地点名、路线名、上海独处路线推荐或任何包含“路线推荐”的标题。",
                 "整体使用第二人称，像城市剧本编辑在帮用户预演一段心境变化，不写现场导航命令。",
                 "script 是兼容旧展示的一段沉浸式路线摘要，约120至200字，必须写出真实点位名和情绪变化。",
-                "script_sections 只能包含 type 为 spot 的分幕，数量和顺序必须与输入 spots 完全一致。",
+                "script_sections 只能包含 type 为 spot 的分幕。优先覆盖输入 spots 中前 4 个点位；如果点位很多，不必覆盖所有点位，但必须保持输入顺序。",
                 "每一幕标题要短而有情绪，可写成“第一幕｜宇宙仍在头顶。”这样的形式。",
                 "每一幕必须包含 title、text、paragraphs、spot_id、spot_name；paragraphs 为 2 至 3 段中文短段落。",
                 "每一幕只引用对应点位事实，可写感官与心境，但不能添加未提供事实。",
@@ -164,7 +164,7 @@ class QwenService:
                     "不得输出 Markdown，不得把路线写成营销广告、景点百科或普通旅游攻略。"
                 ),
                 user_prompt=json.dumps(request_payload, ensure_ascii=False),
-                max_tokens=3600,
+                max_tokens=6000,
                 temperature=0.45,
                 timeout_seconds=max(self.timeout_seconds, DEFAULT_SCRIPT_TIMEOUT_SECONDS),
             )
@@ -409,7 +409,9 @@ def _clean_script_sections(raw_sections, route):
 
     if has_non_spot_story_section or not has_spot:
         return []
-    if expected_spot_keys and section_spot_keys != expected_spot_keys:
+    # 放宽校验：千问只要返回了有效 spot 分幕，就不要因为没有覆盖全部点位而回退到本地模板。
+    # 原逻辑要求 section_spot_keys 必须与 expected_spot_keys 完全一致，路线点位较多时很容易触发 qwen_incomplete_response。
+    if expected_spot_keys and not section_spot_keys:
         return []
     return sections
 
