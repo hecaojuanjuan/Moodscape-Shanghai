@@ -674,6 +674,8 @@ async function renderRouteMap(route, index) {
 
     let totalDistance = 0;
     let totalDuration = 0;
+    let totalRidingDuration = 0;
+    let totalDrivingDuration = 0;
     let failedSegments = 0;
     for (let segmentIndex = 0; segmentIndex < positions.length - 1; segmentIndex += 1) {
       const start = positions[segmentIndex];
@@ -693,6 +695,30 @@ async function renderRouteMap(route, index) {
         failedSegments += 1;
         drawRouteLine(AMap, activeMap, [start, end], true);
       }
+
+      // 骑行 / 驾车时间仅用于展示，不额外绘制线路，失败时静默跳过
+      try {
+        const riding = await planRidingSegment(AMap, start, end);
+        if (renderId !== activeMapRenderId) {
+          return;
+        }
+        totalRidingDuration += riding.duration;
+      } catch (error) {
+        if (renderId !== activeMapRenderId) {
+          return;
+        }
+      }
+      try {
+        const driving = await planDrivingSegment(AMap, start, end);
+        if (renderId !== activeMapRenderId) {
+          return;
+        }
+        totalDrivingDuration += driving.duration;
+      } catch (error) {
+        if (renderId !== activeMapRenderId) {
+          return;
+        }
+      }
     }
 
     activeMap.setFitView();
@@ -702,7 +728,13 @@ async function renderRouteMap(route, index) {
       statusParts.push(`步行约 ${(totalDistance / 1000).toFixed(1)} 公里`);
     }
     if (totalDuration > 0) {
-      statusParts.push(`约 ${Math.max(1, Math.round(totalDuration / 60))} 分钟`);
+      statusParts.push(`步行约 ${Math.max(1, Math.round(totalDuration / 60))} 分钟`);
+    }
+    if (totalRidingDuration > 0) {
+      statusParts.push(`骑行约 ${Math.max(1, Math.round(totalRidingDuration / 60))} 分钟`);
+    }
+    if (totalDrivingDuration > 0) {
+      statusParts.push(`驾车约 ${Math.max(1, Math.round(totalDrivingDuration / 60))} 分钟`);
     }
     if (failedSegments > 0) {
       statusParts.push(`${failedSegments} 段未获取道路规划，已用虚线连接`);
@@ -736,7 +768,7 @@ function loadAmapScript() {
   };
   amapLoadPromise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(appConfig.amapJsKey)}&plugin=AMap.Walking`;
+    script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(appConfig.amapJsKey)}&plugin=AMap.Walking,AMap.Riding,AMap.Driving`;
     script.async = true;
     script.onload = () => resolve(window.AMap);
     script.onerror = () => {
@@ -794,6 +826,46 @@ function planWalkingSegment(AMap, start, end) {
         distance: Number(route.distance) || 0,
         duration: Number(route.time) || 0,
         path: path.length ? path : [start, end],
+      });
+    });
+  });
+}
+
+function planRidingSegment(AMap, start, end) {
+  return new Promise((resolve, reject) => {
+    const riding = new AMap.Riding({
+      hideMarkers: true,
+      autoFitView: false,
+    });
+    riding.search(start, end, (status, result) => {
+      const route = result?.routes?.[0];
+      if (status !== "complete" || !route) {
+        reject(new Error("骑行路线规划失败"));
+        return;
+      }
+      resolve({
+        distance: Number(route.distance) || 0,
+        duration: Number(route.time) || 0,
+      });
+    });
+  });
+}
+
+function planDrivingSegment(AMap, start, end) {
+  return new Promise((resolve, reject) => {
+    const driving = new AMap.Driving({
+      hideMarkers: true,
+      autoFitView: false,
+    });
+    driving.search(start, end, (status, result) => {
+      const route = result?.routes?.[0];
+      if (status !== "complete" || !route) {
+        reject(new Error("驾车路线规划失败"));
+        return;
+      }
+      resolve({
+        distance: Number(route.distance) || 0,
+        duration: Number(route.time) || 0,
       });
     });
   });
