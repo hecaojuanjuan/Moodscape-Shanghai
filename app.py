@@ -180,7 +180,8 @@ def _analyze_intent(user_text):
             allowed_experience_tags=experience_tags,
             allowed_mindset_tags=mindset_tags,
         )
-    except Exception:
+    except Exception as exc:
+        qwen_service.log_exception(exc)
         return _fallback_intent(user_text)
 
 
@@ -188,7 +189,8 @@ def _generate_route_scripts(routes, user_text, intent):
     qwen_service.last_script_error = ""
     try:
         return qwen_service.generate_route_scripts(routes, user_text, intent)
-    except Exception:
+    except Exception as exc:
+        qwen_service.log_exception(exc)
         qwen_service.last_script_error = "qwen_request_failed"
         return {}
 

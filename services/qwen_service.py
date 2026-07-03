@@ -1,5 +1,7 @@
 import json
 import os
+import sys
+import traceback
 
 
 DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
@@ -36,9 +38,15 @@ class QwenService:
     def enabled(self):
         return bool(self.api_key.strip())
 
+    def log_exception(self, exc):
+        self._log_request_failure(exc)
+
     def analyze_intent(self, user_text, allowed_experience_tags, allowed_mindset_tags):
         fallback = _fallback_intent(user_text)
-        if not self.enabled or not str(user_text or "").strip():
+        if not self.enabled:
+            self._log_request_skipped("Qwen API key is empty.")
+            return fallback
+        if not str(user_text or "").strip():
             return fallback
 
         prompt = {
@@ -62,7 +70,8 @@ class QwenService:
                 user_prompt=json.dumps(prompt, ensure_ascii=False),
                 max_tokens=500,
             )
-        except Exception:
+        except Exception as exc:
+            self._log_request_failure(exc)
             return fallback
 
         experience_tags = _filter_allowed(
@@ -83,9 +92,11 @@ class QwenService:
 
     def generate_route_scripts(self, routes, user_text, intent):
         self.last_script_error = ""
-        if not self.enabled or not routes:
-            if not self.enabled:
-                self.last_script_error = "qwen_not_configured"
+        if not self.enabled:
+            self.last_script_error = "qwen_not_configured"
+            self._log_request_skipped("Qwen API key is empty.")
+            return {}
+        if not routes:
             return {}
 
         route_payloads = [_route_prompt_payload(route) for route in routes]
@@ -157,10 +168,12 @@ class QwenService:
                 temperature=0.45,
                 timeout_seconds=max(self.timeout_seconds, DEFAULT_SCRIPT_TIMEOUT_SECONDS),
             )
-        except QwenInvalidResponseError:
+        except QwenInvalidResponseError as exc:
+            self._log_request_failure(exc)
             self.last_script_error = "qwen_invalid_response"
             return {}
-        except Exception:
+        except Exception as exc:
+            self._log_request_failure(exc)
             self.last_script_error = "qwen_request_failed"
             return {}
 
@@ -231,6 +244,29 @@ class QwenService:
                 timeout=self.timeout_seconds,
             )
         return self._client_instance
+
+    def _log_request_failure(self, exc):
+        _log_qwen_exception(
+            exc=exc,
+            model=self.model,
+            base_url=self.base_url,
+            api_key=self.api_key,
+            timeout_seconds=self.timeout_seconds,
+        )
+
+    def _log_request_skipped(self, reason):
+        print("======== Qwen Request Skipped ========", file=sys.stderr)
+        print("Reason:", file=sys.stderr)
+        print(reason, file=sys.stderr)
+        print("Model:", file=sys.stderr)
+        print(self.model, file=sys.stderr)
+        print("Base URL:", file=sys.stderr)
+        print(self.base_url, file=sys.stderr)
+        print("API Key Exists:", file=sys.stderr)
+        print(bool(str(self.api_key or "").strip()), file=sys.stderr)
+        print("Timeout Seconds:", file=sys.stderr)
+        print(self.timeout_seconds, file=sys.stderr)
+        print("====================================", file=sys.stderr)
 
 
 def _fallback_intent(user_text):
@@ -419,6 +455,26 @@ def _strip_code_fence(value):
 
 def _clean_text(value):
     return str(value or "").strip()
+
+
+def _log_qwen_exception(exc, model, base_url, api_key, timeout_seconds=None):
+    print("======== Qwen Request Failed ========", file=sys.stderr)
+    print("Exception Type:", file=sys.stderr)
+    print(type(exc).__name__, file=sys.stderr)
+    print("Exception Message:", file=sys.stderr)
+    print(str(exc), file=sys.stderr)
+    print("Traceback:", file=sys.stderr)
+    traceback.print_exception(type(exc), exc, exc.__traceback__, file=sys.stderr)
+    print("Model:", file=sys.stderr)
+    print(model, file=sys.stderr)
+    print("Base URL:", file=sys.stderr)
+    print(base_url, file=sys.stderr)
+    print("API Key Exists:", file=sys.stderr)
+    print(bool(str(api_key or "").strip()), file=sys.stderr)
+    if timeout_seconds is not None:
+        print("Timeout Seconds:", file=sys.stderr)
+        print(timeout_seconds, file=sys.stderr)
+    print("====================================", file=sys.stderr)
 
 
 def _positive_float(value, fallback):
