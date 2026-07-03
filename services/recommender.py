@@ -3,6 +3,7 @@ import re
 
 from services.dynamic_routes import build_dynamic_routes, distance_km
 from services.excel_data import load_excel_data
+from services.intent_matching import intent_has_matching_signal, score_route_for_intent
 from services.profile_vector import (
     build_route_profile_vector,
     build_user_profile_vector,
@@ -26,6 +27,7 @@ TEXT_MINDSET_WEIGHT = 0.65
 TOKEN_MATCH_SCORE = 4
 PROFILE_SIMILARITY_SCORE = 180
 MATCH_PERCENT_CAP = 98
+INTENT_ROUTE_SCORE_FACTOR = 20
 
 
 def load_routes():
@@ -46,6 +48,7 @@ def recommend_route(
     profile_answers=None,
     inferred_experience_tags=None,
     inferred_mindset_tags=None,
+    intent=None,
     limit=3,
 ):
     routes = recommend_routes(
@@ -54,6 +57,7 @@ def recommend_route(
         profile_answers=profile_answers,
         inferred_experience_tags=inferred_experience_tags,
         inferred_mindset_tags=inferred_mindset_tags,
+        intent=intent,
         limit=limit,
     )
     return routes[0] if routes else {}
@@ -65,23 +69,30 @@ def recommend_routes(
     profile_answers=None,
     inferred_experience_tags=None,
     inferred_mindset_tags=None,
+    intent=None,
     limit=3,
 ):
     data = load_excel_data()
     selected = _normalize_selected_tags(selected_tags)
     user_text = user_text if isinstance(user_text, str) else ""
+    intent = intent if isinstance(intent, dict) else {}
+    intent_inferred_tags = _normalize_inferred_tags(
+        intent.get("inferred_tags"),
+        {tag["emotion_tag"] for tag in data["tags"]} | set(data["mindset_tags"]),
+    )
     inferred_experience_tags = _normalize_inferred_tags(
-        inferred_experience_tags,
+        inferred_experience_tags or intent.get("inferred_experience_tags") or intent_inferred_tags,
         {tag["emotion_tag"] for tag in data["tags"]},
     )
     inferred_mindset_tags = _normalize_inferred_tags(
-        inferred_mindset_tags,
+        inferred_mindset_tags or intent.get("inferred_mindset_tags") or intent_inferred_tags,
         set(data["mindset_tags"]),
     )
     if not selected and not user_text.strip() and not inferred_experience_tags and not inferred_mindset_tags:
         return []
 
     selected_experience_tags, selected_mindsets = _split_selected_tags(selected, data)
+    selected_query_tags = selected_experience_tags + selected_mindsets
     text_matched_tags = _match_tags_from_text(user_text, data)
     text_matched_mindsets = _match_mindsets_from_text(user_text, text_matched_tags, data)
     text_matched_tags = _merge_inferred_tags(
@@ -102,6 +113,8 @@ def recommend_routes(
         text_matched_mindsets,
         user_text,
         bool(user_profile["vector"]),
+        intent,
+        selected_query_tags,
     )
 
     seed_routes = _recommend_seed_routes(
@@ -114,6 +127,8 @@ def recommend_routes(
         user_profile,
         possible_score,
         limit,
+        intent,
+        selected_query_tags,
     )
     if not seed_routes:
         return []
@@ -129,6 +144,7 @@ def recommend_routes(
         user_profile=user_profile,
         possible_score=possible_score,
         match_percent=_match_percent,
+        intent=intent,
         limit=limit,
     )
     return dynamic_routes or seed_routes
@@ -144,8 +160,11 @@ def _recommend_seed_routes(
     user_profile,
     possible_score,
     limit,
+    intent,
+    selected_query_tags,
 ):
     scored = []
+    use_intent_primary = bool(user_text.strip()) and intent_has_matching_signal(intent)
     for index, route in enumerate(data["routes"]):
         (
             raw_score,
@@ -155,6 +174,8 @@ def _recommend_seed_routes(
             card_copy,
             profile_similarity,
             profile_traits,
+            intent_score,
+            matched_intent_terms,
         ) = _score_route(
             route,
             selected_experience_tags,
@@ -164,6 +185,8 @@ def _recommend_seed_routes(
             user_text,
             data,
             user_profile,
+            intent,
+            selected_query_tags,
         )
         scored.append(
             {
@@ -177,11 +200,18 @@ def _recommend_seed_routes(
                 "suggested_card_copy": card_copy,
                 "profile_similarity": profile_similarity,
                 "matched_profile_traits": profile_traits,
+                "intent_score": intent_score,
+                "matched_intent_terms": matched_intent_terms,
             }
         )
 
-    scored.sort(key=lambda item: (-item["match_percent"], -item["raw_score"], item["index"]))
-    candidates = scored[: max(1, limit)]
+    if use_intent_primary:
+        scored.sort(key=lambda item: (-item["intent_score"], -item["match_percent"], -item["raw_score"], item["index"]))
+        positive_intent = [item for item in scored if item["intent_score"] > 0]
+        candidates = (positive_intent or scored)[: max(1, limit)]
+    else:
+        scored.sort(key=lambda item: (-item["match_percent"], -item["raw_score"], item["index"]))
+        candidates = scored[: max(1, limit)]
     return _format_candidates(candidates, possible_score)
 
 
@@ -282,7 +312,18 @@ def _match_mindsets_from_text(user_text, text_matched_tags, data):
     return matched
 
 
-def _score_route(route, selected_tags, selected_mindsets, text_tags, text_mindsets, user_text, data, user_profile):
+def _score_route(
+    route,
+    selected_tags,
+    selected_mindsets,
+    text_tags,
+    text_mindsets,
+    user_text,
+    data,
+    user_profile,
+    intent=None,
+    selected_query_tags=None,
+):
     matched_tags = []
     matched_mindsets = []
     reasons = []
@@ -338,9 +379,31 @@ def _score_route(route, selected_tags, selected_mindsets, text_tags, text_mindse
             score += profile_similarity * PROFILE_SIMILARITY_SCORE
             profile_traits = matched_profile_traits(user_profile, route_vector)
 
+    intent_score = 0
+    matched_intent_terms = []
+    if user_text.strip() or intent_has_matching_signal(intent):
+        intent_score, _, _, matched_intent_terms = score_route_for_intent(
+            route=route,
+            route_spots=route.get("spots", []),
+            selected_tags=selected_query_tags or selected_tags + selected_mindsets,
+            intent=intent or {},
+            mood_text=user_text,
+        )
+    if intent_score:
+        score += intent_score * INTENT_ROUTE_SCORE_FACTOR
+        for tag in _normalize_inferred_tags(
+            (intent or {}).get("inferred_tags"),
+            {tag["emotion_tag"] for tag in data["tags"]},
+        ):
+            _append_unique(matched_tags, tag)
+        for mindset in _normalize_inferred_tags((intent or {}).get("inferred_tags"), set(data["mindset_tags"])):
+            _append_unique(matched_mindsets, mindset)
+
     reason = next((reason for reason in reasons if reason), "") or route["route_intro_user_facing"] or route["suitable_mood"] or route["ai_script_angle"]
+    if intent_score and not reasons and (intent or {}).get("normalized_intent"):
+        reason = f"符合“{intent['normalized_intent']}”的当前需求。"
     card_copy = next((copy_text for copy_text in card_copies if copy_text), "") or route["route_intro_user_facing"]
-    return score, matched_tags, matched_mindsets, reason, card_copy, profile_similarity, profile_traits
+    return score, matched_tags, matched_mindsets, reason, card_copy, profile_similarity, profile_traits, intent_score, matched_intent_terms
 
 
 def _experience_tag_score(route, tag, mapping_by_pair, selected):
@@ -365,7 +428,7 @@ def _mindset_score(route, mindset, selected):
     return value * (SELECTED_MINDSET_WEIGHT if selected else TEXT_MINDSET_WEIGHT)
 
 
-def _query_possible_score(selected_tags, selected_mindsets, text_tags, text_mindsets, user_text, has_profile):
+def _query_possible_score(selected_tags, selected_mindsets, text_tags, text_mindsets, user_text, has_profile, intent=None, selected_query_tags=None):
     score = 0.0
     for _ in selected_tags:
         score += _experience_tag_possible_score(selected=True)
@@ -378,6 +441,7 @@ def _query_possible_score(selected_tags, selected_mindsets, text_tags, text_mind
     score += len(_input_tokens(user_text)) * TOKEN_MATCH_SCORE
     if has_profile:
         score += PROFILE_SIMILARITY_SCORE
+    score += _intent_possible_score(intent, selected_query_tags, user_text)
     return score
 
 
@@ -411,6 +475,8 @@ def _format_candidates(candidates, possible_score):
         route["suggested_card_copy"] = item["suggested_card_copy"]
         route["profile_similarity"] = round(item["profile_similarity"], 3)
         route["matched_profile_traits"] = item["matched_profile_traits"]
+        route["intent_score"] = item.get("intent_score", 0)
+        route["matched_intent_terms"] = item.get("matched_intent_terms", [])
         route["is_dynamic"] = False
         route["source_route_ids"] = [route["route_id"]]
         route["route_distance_km"] = round(_route_distance_km(route.get("spots", [])), 2)
@@ -423,6 +489,21 @@ def _match_percent(score, possible_score):
         return 0
     percent = score / possible_score * 100
     return round(max(0, min(MATCH_PERCENT_CAP, percent)), 1)
+
+
+def _intent_possible_score(intent, selected_query_tags, user_text):
+    if not intent_has_matching_signal(intent):
+        return 0
+    possible = len(selected_query_tags or []) * 10
+    possible += len(intent.get("inferred_tags") or []) * 7
+    possible += len(intent.get("preferred_scene_types") or []) * 10
+    possible += len(intent.get("route_keywords") or []) * 9
+    possible += len(intent.get("must_have") or []) * 8
+    possible += len(intent.get("soft_preferences") or []) * 4
+    possible += len(intent.get("avoid_scene_types") or []) * 5
+    if user_text.strip() and selected_query_tags:
+        possible += 8
+    return max(possible, 1) * INTENT_ROUTE_SCORE_FACTOR
 
 
 def _route_search_text(route):

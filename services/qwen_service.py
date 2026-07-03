@@ -3,6 +3,8 @@ import os
 import sys
 import traceback
 
+from services.intent_matching import fallback_intent, normalize_intent
+
 
 DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 DEFAULT_MODEL = "qwen3.5-plus"
@@ -90,7 +92,74 @@ class QwenService:
             "source": "qwen",
         }
 
-    def generate_route_scripts(self, routes, user_text, intent):
+    def parse_user_intent_with_llm(self, selected_tags, mood_text, available_tags, route_summaries):
+        fallback = fallback_intent(
+            selected_tags=selected_tags,
+            mood_text=mood_text,
+            available_tags=available_tags,
+        )
+        if not self.enabled:
+            self._log_request_skipped("Qwen API key is empty.")
+            return fallback
+        if not selected_tags and not str(mood_text or "").strip():
+            return fallback
+
+        request_payload = {
+            "task": "把用户选择的标签和心情描述转化为结构化推荐意图，不生成路线、不编造点位。",
+            "available_tags": list(available_tags or []),
+            "selected_tags": list(selected_tags or []),
+            "mood_text": str(mood_text or "").strip(),
+            "route_summaries": list(route_summaries or []),
+            "rules": [
+                "只能基于 available_tags 推断 inferred_tags，不能创造新标签。",
+                "如果用户没有选择标签，但写了心情描述，也要理解用户想要的体验。",
+                "如果用户同时选择标签和输入心情描述，需要同时考虑两者。",
+                "用户选择的标签代表明确偏好，心情描述代表当前即时需求。",
+                "如果二者冲突，请输出能够兼顾二者的解释，不要忽略任何一方。",
+                "不要编造路线、点位、地址、route_id 或 spot_id。",
+                "只输出 JSON，不要输出 Markdown 或解释文字。",
+            ],
+            "output_schema": {
+                "normalized_intent": "用一句话总结用户真正想要的体验",
+                "inferred_tags": ["必须从 available_tags 里选择"],
+                "preferred_scene_types": [],
+                "avoid_scene_types": [],
+                "must_have": [],
+                "soft_preferences": [],
+                "route_keywords": [],
+                "mood_tone": "",
+                "budget_preference": "low / medium / high / unknown",
+                "crowd_preference": "quiet / lively / balanced / unknown",
+                "time_preference": "day / night / flexible / unknown",
+                "confidence": 0.0,
+            },
+        }
+
+        try:
+            result = self._request_json(
+                system_prompt=(
+                    "你是一个城市情绪化旅游推荐系统的意图理解模块。"
+                    "你的任务不是生成路线，而是把用户选择的标签和心情描述转化成结构化推荐意图。"
+                    "必须返回 JSON 对象，不得输出 Markdown；不得创造输入列表之外的标签；"
+                    "不得输出不存在的 route_id、spot_id、地点或地址。"
+                ),
+                user_prompt=json.dumps(request_payload, ensure_ascii=False),
+                max_tokens=1200,
+                temperature=0.2,
+            )
+        except Exception as exc:
+            self._log_request_failure(exc)
+            return fallback
+
+        return normalize_intent(
+            result,
+            selected_tags=selected_tags,
+            mood_text=mood_text,
+            available_tags=available_tags,
+            source="qwen",
+        )
+
+    def generate_route_scripts(self, routes, user_text, intent, selected_tags=None, mood_text=None):
         self.last_script_error = ""
         if not self.enabled:
             self.last_script_error = "qwen_not_configured"
@@ -107,9 +176,14 @@ class QwenService:
         ]
         request_payload = {
             "task": "为候选上海路线分别生成按点位分幕的沉浸旅行剧本：以用户心境为主线、以真实城市点位为场景、以情绪变化为结构。不要生成普通旅游攻略。",
+            "selected_tags": list(selected_tags or []),
+            "mood_text": str(mood_text if mood_text is not None else user_text or "").strip(),
             "user_text": str(user_text or "").strip(),
             "intent": intent or {},
+            "intent_json": intent or {},
             "routes": route_payloads,
+            "candidate_routes": route_payloads,
+            "candidate_spots": _candidate_spot_payloads(routes),
             "coverage_policy": {
                 "required_route_ids": required_route_ids,
                 "required_scripts_count": len(required_route_ids),
@@ -119,6 +193,10 @@ class QwenService:
                 "scripts must include every route_id listed in coverage_policy.required_route_ids exactly once.",
                 "每个 route_id 最多返回一组剧本。",
                 "只能使用输入中提供的路线和点位。",
+                "请同时尊重用户手动选择的标签和用户输入的心情描述。",
+                "手动标签代表明确偏好，心情描述代表当前即时需求。",
+                "最终路线必须只使用 candidate_routes 和 candidate_spots 里的真实内容，不要编造不存在的地点。",
+                "如果标签和心情描述存在差异，请生成能够兼顾两者的路线，不要忽略其中任何一方。",
                 "不得新增景点、改变点位顺序或虚构开放时间、票务信息、历史事件。",
                 "不要生成普通旅游攻略、景点百科、交通清单、营销广告或泛泛的打卡建议。",
                 "每条路线只输出剧本标题和按真实点位排列的分幕正文。",
@@ -321,6 +399,31 @@ def _route_prompt_payload(route):
     }
 
 
+def _candidate_spot_payloads(routes):
+    spots = []
+    seen = set()
+    for route in routes or []:
+        for spot in route.get("spots", []):
+            spot_id = _clean_text(spot.get("spot_id"))
+            if not spot_id or spot_id in seen:
+                continue
+            seen.add(spot_id)
+            spots.append(
+                {
+                    "route_id": route.get("route_id", ""),
+                    "spot_id": spot_id,
+                    "name": spot.get("name", ""),
+                    "description": spot.get("description", ""),
+                    "scene_tags": list(spot.get("scene_tags") or []),
+                    "feedback_keywords": list(spot.get("feedback_keywords") or []),
+                    "open_time": spot.get("open_time", ""),
+                    "ticket_reservation": spot.get("ticket_reservation", ""),
+                    "address": spot.get("address", ""),
+                }
+            )
+    return spots
+
+
 def _clean_script_payload(item, route):
     script = _clean_text(item.get("script"))
     script_title = _clean_text(item.get("script_title"))
@@ -409,11 +512,26 @@ def _clean_script_sections(raw_sections, route):
 
     if has_non_spot_story_section or not has_spot:
         return []
-    # 放宽校验：千问只要返回了有效 spot 分幕，就不要因为没有覆盖全部点位而回退到本地模板。
-    # 原逻辑要求 section_spot_keys 必须与 expected_spot_keys 完全一致，路线点位较多时很容易触发 qwen_incomplete_response。
-    if expected_spot_keys and not section_spot_keys:
+    if expected_spot_keys and not _spot_keys_follow_route_order(section_spot_keys, expected_spot_keys):
         return []
     return sections
+
+
+def _spot_keys_follow_route_order(section_spot_keys, expected_spot_keys):
+    if not section_spot_keys:
+        return False
+
+    seen = set()
+    last_index = -1
+    for key in section_spot_keys:
+        if key in seen or key not in expected_spot_keys:
+            return False
+        index = expected_spot_keys.index(key)
+        if index <= last_index:
+            return False
+        seen.add(key)
+        last_index = index
+    return True
 
 
 def _clean_script_paragraphs(raw_paragraphs, fallback_text):

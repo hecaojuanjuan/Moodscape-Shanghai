@@ -22,7 +22,7 @@ const selectedTagsText = document.querySelector("#selectedTagsText");
 const resultTitle = document.querySelector("#resultTitle");
 const tagGrid = document.querySelector("#tagGrid");
 const mindsetGrid = document.querySelector("#mindsetGrid");
-const needsInputMessage = "请在左侧选择标签，或者写入你的心情状态。";
+const needsInputMessage = "请选择标签或输入心情描述";
 const profileStorageKey = "moodscapeProfileAnswers";
 const appConfig = window.MOODSCAPE_CONFIG || {};
 
@@ -118,6 +118,7 @@ recommendForm.addEventListener("submit", async (event) => {
       },
       body: JSON.stringify({
         selected_tags: Array.from(selectedTags),
+        mood_text: trimmedUserText,
         user_text: trimmedUserText,
         profile_answers: collectProfileAnswers(),
       }),
@@ -130,7 +131,7 @@ recommendForm.addEventListener("submit", async (event) => {
       data = {};
     }
     if (!response.ok || data.error) {
-      throw new Error(data.message || "生成接口暂时不可用，请稍后再试。");
+      throw new Error(data.error || data.message || `请求失败：${response.status}`);
     }
     if (data.needs_input) {
       showNeedsInput(data.message || needsInputMessage);
@@ -143,8 +144,9 @@ recommendForm.addEventListener("submit", async (event) => {
     renderRouteOptions(currentRoutes);
     statusText.textContent = "已生成候选路线。";
   } catch (error) {
+    console.error("生成路线失败：", error);
     resultTitle.textContent = "生成失败";
-    results.innerHTML = `<p class="empty-state">${escapeHtml(error.message)}</p>`;
+    results.innerHTML = `<p class="empty-state">${escapeHtml(error.message || "生成失败，请稍后重试")}</p>`;
     statusText.textContent = "";
   } finally {
     setLoading(false);
@@ -559,12 +561,21 @@ function renderScriptContent(route) {
     : [];
   const scriptTitle = route.script_title || "沉浸式城市剧本";
   const sourceBadge = getScriptSourceBadge(route);
-  const sourceMessage = route.script_source === "fallback"
-    ? route.script_source_message || "千问未成功返回，当前为本地模板。"
+  const sourceMessage = route.script_source === "qwen_missing"
+    ? route.script_source_message || "千问未返回该路线剧本，请重试。"
     : "";
 
   if (!sections.length) {
-    return `<p>${escapeHtml(route.script)}</p>`;
+    const emptyMessage = route.script || sourceMessage || "千问未返回该路线剧本，请重试。";
+    return `
+      <div class="script-story">
+        <div class="script-story-heading">
+          <h4 class="script-story-title">${escapeHtml(scriptTitle)}</h4>
+          ${sourceBadge}
+        </div>
+        <p class="script-source-note">${escapeHtml(emptyMessage)}</p>
+      </div>
+    `;
   }
 
   return `
@@ -585,8 +596,8 @@ function getScriptSourceBadge(route) {
   if (route.script_source === "qwen") {
     return '<span class="script-source-badge">来自千问</span>';
   }
-  if (route.script_source === "fallback") {
-    return '<span class="script-source-badge is-fallback">本地模板</span>';
+  if (route.script_source === "qwen_missing") {
+    return '<span class="script-source-badge is-missing">未生成</span>';
   }
   return "";
 }

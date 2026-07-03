@@ -3,9 +3,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
-from services.excel_data import load_excel_data
+from services.excel_data import DEFAULT_EXCEL_PATH, load_excel_data
+from services.intent_matching import score_spot_for_intent
 from services.recommender import (
     _experience_tag_score,
     load_routes,
@@ -22,15 +23,25 @@ class RecommenderTest(unittest.TestCase):
         data = load_excel_data()
         routes = data["routes"]
         tags = data["tags"]
+        source_routes = _read_workbook_rows(0)
+        source_spots = _read_workbook_rows(1)
+        source_tags = _read_workbook_rows(2)
 
-        self.assertEqual(len(routes), 28)
-        self.assertEqual(sum(len(route["spots"]) for route in routes), 102)
-        self.assertEqual(len(data["spots"]), 102)
-        self.assertEqual(len(tags), 15)
+        self.assertEqual(len(routes), len(source_routes))
+        assigned_source_spots = [
+            spot for spot in source_spots if spot.get("route_id")
+        ]
+        self.assertEqual(
+            sum(len(route["spots"]) for route in routes),
+            len(assigned_source_spots),
+        )
+        self.assertEqual(len(data["spots"]), len(source_spots))
+        self.assertEqual(len(tags), len(source_tags))
         self.assertEqual(data["mindset_tags"], self.MINDSET_LABELS)
 
         self.assertEqual([tag["user_button_text"] for tag in tags[:3]], ["一个人静静", "夜景治愈", "拍照出片"])
         self.assertEqual(tags[0]["recommended_routes"], ["R03", "R13", "R14", "R16", "R20"])
+        self.assertIn("童话/动漫感", [tag["user_button_text"] for tag in tags])
 
         bund_route = next(route for route in routes if route["route_id"] == "R01")
         self.assertEqual(bund_route["primary_emotion_tags"], ["想被夜景治愈", "想认识上海第一面"])
@@ -38,6 +49,11 @@ class RecommenderTest(unittest.TestCase):
         self.assertEqual(bund_route["spots"][0]["lng"], 121.486111)
         self.assertEqual(set(bund_route["mindset_scores"]), set(self.MINDSET_LABELS))
         self.assertIn("source_note", bund_route["spots"][0])
+
+        anime_route = next(route for route in routes if route["route_id"] == "R30")
+        self.assertEqual(anime_route["route_name"], "南京东路二次元补给线")
+        self.assertEqual(len(anime_route["spots"]), 5)
+        self.assertIn("想进入童话/动漫世界", anime_route["primary_emotion_tags"])
 
     def test_excel_loader_keeps_unassigned_spots_in_spot_pool(self):
         with TemporaryDirectory() as temp_dir:
@@ -53,8 +69,12 @@ class RecommenderTest(unittest.TestCase):
         self.assertEqual(data["spots"][1]["name"], "新加入的安静花园")
 
     def test_compat_loaders_read_excel_not_static_json(self):
-        self.assertEqual(len(load_routes()), 28)
-        self.assertEqual(len(load_tags()), 15)
+        source_routes = _read_workbook_rows(0)
+        source_tags = _read_workbook_rows(2)
+
+        self.assertEqual(len(load_routes()), len(source_routes))
+        self.assertEqual(load_routes()[-1]["route_id"], source_routes[-1]["route_id"])
+        self.assertEqual(len(load_tags()), len(source_tags))
 
     def test_recommend_routes_returns_three_excel_candidates_with_distinct_match_percent(self):
         routes = recommend_routes(selected_tags=["疗愈"], user_text="")
@@ -132,6 +152,77 @@ class RecommenderTest(unittest.TestCase):
 
         self.assertEqual(routes[0]["route_id"], "R01")
         self.assertIn("想被夜景治愈", routes[0]["matched_tags"])
+
+    def test_structured_intent_can_drive_mood_only_anime_recommendation(self):
+        routes = recommend_routes(
+            selected_tags=[],
+            user_text="我今天想找二次元周边",
+            intent={
+                "normalized_intent": "想找二次元和 IP 周边空间",
+                "inferred_tags": ["想进入童话/动漫世界"],
+                "preferred_scene_types": ["二次元", "IP周边", "潮流商业空间"],
+                "avoid_scene_types": [],
+                "must_have": ["周边"],
+                "soft_preferences": [],
+                "route_keywords": ["二次元", "动漫", "周边", "IP"],
+                "mood_tone": "想探索",
+                "budget_preference": "unknown",
+                "crowd_preference": "balanced",
+                "time_preference": "flexible",
+                "confidence": 0.9,
+                "source": "qwen",
+            },
+        )
+
+        self.assertEqual(routes[0]["route_id"], "R30")
+        self.assertIn("想进入童话/动漫世界", routes[0]["matched_tags"])
+        self.assertGreater(routes[0]["intent_score"], 0)
+
+    def test_structured_intent_combines_manual_tag_and_mood_avoidance(self):
+        routes = recommend_routes(
+            selected_tags=["想夜晚继续玩"],
+            user_text="想安静一点，不想人太多",
+            intent={
+                "normalized_intent": "想夜间继续玩，但避开拥挤嘈杂的空间",
+                "inferred_tags": ["想夜晚继续玩"],
+                "preferred_scene_types": ["夜景", "安静空间", "滨江"],
+                "avoid_scene_types": ["南京路", "外滩", "人多", "拥挤"],
+                "must_have": ["安静"],
+                "soft_preferences": [],
+                "route_keywords": ["夜晚", "安静", "滨江"],
+                "mood_tone": "想放松",
+                "budget_preference": "unknown",
+                "crowd_preference": "quiet",
+                "time_preference": "night",
+                "confidence": 0.86,
+                "source": "qwen",
+            },
+        )
+
+        self.assertNotEqual(routes[0]["route_id"], "R01")
+        self.assertNotIn("外滩", routes[0]["route_name"])
+        self.assertNotIn("南京路", routes[0]["route_name"])
+        self.assertGreater(routes[0]["intent_score"], 0)
+
+    def test_score_spot_for_intent_rewards_candidate_route_and_must_have_terms(self):
+        spot = _spot("S777", "安静游戏空间", 31.2000, 121.4400, route_id="R30")
+        spot["scene_tags"] = ["游戏", "二次元", "安静空间"]
+        spot["feedback_keywords"] = ["开黑", "周边", "低噪音"]
+
+        score = score_spot_for_intent(
+            spot=spot,
+            selected_tags=["想夜晚继续玩"],
+            intent={
+                "inferred_tags": ["想进入童话/动漫世界"],
+                "preferred_scene_types": ["二次元", "安静空间"],
+                "route_keywords": ["开黑", "周边"],
+                "must_have": ["周边"],
+                "avoid_scene_types": [],
+            },
+            candidate_route_ids={"R30"},
+        )
+
+        self.assertGreaterEqual(score, 26)
 
     def test_user_text_matches_only_excel_fields(self):
         routes = recommend_routes(selected_tags=[], user_text="低噪音 慢节奏 可独处 可停留")
@@ -367,6 +458,25 @@ def _write_minimal_workbook(path):
     )
     _write_table(mappings, ["tag_id", "emotion_tag", "route_id", "route_name", "priority", "match_reason", "suggested_card_copy"], [])
     workbook.save(path)
+
+
+def _read_workbook_rows(sheet_index):
+    workbook = load_workbook(DEFAULT_EXCEL_PATH, read_only=True, data_only=True)
+    try:
+        sheet = workbook.worksheets[sheet_index]
+        headers = [cell.value for cell in next(sheet.iter_rows(min_row=4, max_row=4))]
+        rows = []
+        for values in sheet.iter_rows(min_row=5, values_only=True):
+            row = {
+                str(header): value
+                for header, value in zip(headers, values)
+                if header is not None
+            }
+            if any(value not in (None, "") for value in row.values()):
+                rows.append(row)
+        return rows
+    finally:
+        workbook.close()
 
 
 def _write_table(sheet, headers, rows):

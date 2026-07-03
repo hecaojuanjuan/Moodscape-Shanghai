@@ -23,7 +23,7 @@ class ConfigurationTest(unittest.TestCase):
         ]:
             self.assertIn(f"{variable}=", env_example)
 
-    def test_readme_documents_qwen_amap_and_fallback_behavior(self):
+    def test_readme_documents_qwen_amap_and_missing_script_behavior(self):
         readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
 
         self.assertIn("百炼千问", readme)
@@ -32,7 +32,8 @@ class ConfigurationTest(unittest.TestCase):
         for dependency in ["Flask", "openpyxl", "openai", "python-dotenv"]:
             self.assertIn(dependency, readme)
         self.assertIn("优先使用千问", readme)
-        self.assertIn("本地模板", readme)
+        self.assertIn("qwen_missing", readme)
+        self.assertIn("千问未返回该路线剧本，请重试", readme)
         self.assertIn("来源", readme)
 
 

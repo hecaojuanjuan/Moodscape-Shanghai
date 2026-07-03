@@ -31,6 +31,80 @@ class FakeClient:
 
 
 class QwenServiceTest(unittest.TestCase):
+    def test_parse_user_intent_filters_unknown_tags_and_keeps_structured_preferences(self):
+        client = FakeClient(
+            [
+                json.dumps(
+                    {
+                        "normalized_intent": "想在夜晚找一个安静的二次元空间",
+                        "inferred_tags": ["想夜晚继续玩", "不存在的标签"],
+                        "preferred_scene_types": ["二次元", "安静空间"],
+                        "avoid_scene_types": ["人太多"],
+                        "must_have": ["周边"],
+                        "soft_preferences": ["低预算"],
+                        "route_keywords": ["二次元", "IP周边"],
+                        "mood_tone": "想探索",
+                        "budget_preference": "low",
+                        "crowd_preference": "quiet",
+                        "time_preference": "night",
+                        "confidence": 0.88,
+                    },
+                    ensure_ascii=False,
+                )
+            ]
+        )
+        service = QwenService(api_key="test-key", client=client)
+
+        intent = service.parse_user_intent_with_llm(
+            selected_tags=["想夜晚继续玩"],
+            mood_text="想安静一点，也想找二次元周边",
+            available_tags=["想夜晚继续玩", "想进入童话/动漫世界"],
+            route_summaries=[
+                {
+                    "route_id": "R30",
+                    "route_name": "南京东路二次元补给线",
+                    "route_tags": ["想进入童话/动漫世界"],
+                    "description": "二次元、IP周边和城市夜游",
+                    "scene_tags": ["二次元", "周边"],
+                }
+            ],
+        )
+
+        self.assertEqual(intent["normalized_intent"], "想在夜晚找一个安静的二次元空间")
+        self.assertEqual(intent["inferred_tags"], ["想夜晚继续玩"])
+        self.assertEqual(intent["preferred_scene_types"], ["二次元", "安静空间"])
+        self.assertEqual(intent["avoid_scene_types"], ["人太多"])
+        self.assertEqual(intent["budget_preference"], "low")
+        self.assertEqual(intent["crowd_preference"], "quiet")
+        self.assertEqual(intent["time_preference"], "night")
+        self.assertEqual(intent["source"], "qwen")
+        self.assertEqual(intent["summary"], intent["normalized_intent"])
+
+        request = client.completions.requests[0]
+        prompt = request["messages"][1]["content"]
+        self.assertIn("available_tags", prompt)
+        self.assertIn("selected_tags", prompt)
+        self.assertIn("mood_text", prompt)
+        self.assertIn("route_summaries", prompt)
+        self.assertIn("南京东路二次元补给线", prompt)
+
+    def test_parse_user_intent_falls_back_on_invalid_json_or_timeout(self):
+        for response in ["not-json", TimeoutError("timed out")]:
+            with self.subTest(response=response):
+                service = QwenService(api_key="test-key", client=FakeClient([response]))
+
+                intent = service.parse_user_intent_with_llm(
+                    selected_tags=["想夜晚继续玩"],
+                    mood_text="想安静一点",
+                    available_tags=["想夜晚继续玩"],
+                    route_summaries=[],
+                )
+
+                self.assertEqual(intent["normalized_intent"], "想安静一点")
+                self.assertEqual(intent["inferred_tags"], ["想夜晚继续玩"])
+                self.assertEqual(intent["source"], "fallback")
+                self.assertEqual(intent["confidence"], 0)
+
     def test_analyze_intent_filters_unknown_tags_and_returns_qwen_source(self):
         client = FakeClient(
             [
@@ -220,10 +294,14 @@ class QwenServiceTest(unittest.TestCase):
             user_text="想安静散步",
             intent={
                 "summary": "安静散步",
+                "normalized_intent": "安静散步",
                 "inferred_experience_tags": ["想慢慢走不赶路"],
                 "inferred_mindset_tags": ["疗愈"],
+                "route_keywords": ["安静"],
                 "source": "qwen",
             },
+            selected_tags=["想一个人静静"],
+            mood_text="想安静散步",
         )
 
         request = client.completions.requests[0]
@@ -243,6 +321,11 @@ class QwenServiceTest(unittest.TestCase):
         self.assertIn("feedback_keywords", user_prompt)
         self.assertIn("coverage_policy", user_prompt)
         self.assertIn("required_route_ids", user_prompt)
+        self.assertIn("selected_tags", user_prompt)
+        self.assertIn("mood_text", user_prompt)
+        self.assertIn("intent_json", user_prompt)
+        self.assertIn("candidate_routes", user_prompt)
+        self.assertIn("candidate_spots", user_prompt)
         self.assertIn('"R01"', user_prompt)
 
     def test_generate_route_scripts_uses_longer_timeout_for_script_generation(self):
@@ -343,7 +426,7 @@ class QwenServiceTest(unittest.TestCase):
         self.assertEqual(scripts, {})
         self.assertEqual(service.last_script_error, "qwen_invalid_response")
 
-    def test_generate_route_scripts_requires_all_route_spots_in_order(self):
+    def test_generate_route_scripts_allows_partial_spot_sections_in_route_order(self):
         client = FakeClient(
             [
                 json.dumps(
@@ -351,17 +434,17 @@ class QwenServiceTest(unittest.TestCase):
                         "scripts": [
                             {
                                 "route_id": "R01",
-                                "script": "这条路线漏掉了第二站。",
+                                "script": "这条路线先从第一站慢慢展开。",
+                                "script_title": "把第一束安静留给自己",
                                 "script_sections": [
-                                    {"type": "opening", "title": "开场", "text": "开场。"},
                                     {
                                         "type": "spot",
                                         "spot_id": "S01",
                                         "spot_name": "第一站",
                                         "title": "第一幕｜第一站",
                                         "text": "第一幕。",
-                                    },
-                                    {"type": "closing", "title": "收束", "text": "收束。"},
+                                        "paragraphs": ["第一幕。"],
+                                    }
                                 ],
                             }
                         ]
@@ -378,9 +461,76 @@ class QwenServiceTest(unittest.TestCase):
             intent={"summary": "安静散步", "source": "qwen"},
         )
 
-        self.assertEqual(scripts, {})
-        self.assertEqual(service.last_script_error, "qwen_incomplete_response")
+        self.assertEqual(set(scripts), {"R01"})
+        self.assertEqual(len(scripts["R01"]["script_sections"]), 1)
+        self.assertEqual(scripts["R01"]["script_sections"][0]["spot_id"], "S01")
+        self.assertEqual(service.last_script_error, "")
 
+    def test_generate_route_scripts_rejects_story_sections_and_out_of_order_spots(self):
+        invalid_responses = [
+            {
+                "scripts": [
+                    {
+                        "route_id": "R01",
+                        "script": "这条路线混入了开场和收束。",
+                        "script_title": "混入无效段落的剧本",
+                        "script_sections": [
+                            {"type": "opening", "title": "开场", "text": "开场。"},
+                            {
+                                "type": "spot",
+                                "spot_id": "S01",
+                                "spot_name": "第一站",
+                                "title": "第一幕｜第一站",
+                                "text": "第一幕。",
+                                "paragraphs": ["第一幕。"],
+                            },
+                            {"type": "closing", "title": "收束", "text": "收束。"},
+                        ],
+                    }
+                ]
+            },
+            {
+                "scripts": [
+                    {
+                        "route_id": "R01",
+                        "script": "这条路线把第二站写到了第一站前面。",
+                        "script_title": "顺序错乱的剧本",
+                        "script_sections": [
+                            {
+                                "type": "spot",
+                                "spot_id": "S02",
+                                "spot_name": "第二站",
+                                "title": "第一幕｜第二站",
+                                "text": "第二站。",
+                                "paragraphs": ["第二站。"],
+                            },
+                            {
+                                "type": "spot",
+                                "spot_id": "S01",
+                                "spot_name": "第一站",
+                                "title": "第二幕｜第一站",
+                                "text": "第一站。",
+                                "paragraphs": ["第一站。"],
+                            },
+                        ],
+                    }
+                ]
+            },
+        ]
+
+        for response in invalid_responses:
+            with self.subTest(response=response["scripts"][0]["script_title"]):
+                client = FakeClient([json.dumps(response, ensure_ascii=False)])
+                service = QwenService(api_key="test-key", client=client)
+
+                scripts = service.generate_route_scripts(
+                    routes=[_route("R01", "路线一")],
+                    user_text="想安静散步",
+                    intent={"summary": "安静散步", "source": "qwen"},
+                )
+
+                self.assertEqual(scripts, {})
+                self.assertEqual(service.last_script_error, "qwen_incomplete_response")
 
 def _route(route_id, name):
     return {

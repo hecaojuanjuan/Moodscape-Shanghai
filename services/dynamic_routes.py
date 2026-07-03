@@ -2,6 +2,7 @@ import copy
 import math
 import re
 
+from services.intent_matching import score_spot_for_intent
 from services.profile_vector import (
     build_route_profile_vector,
     cosine_similarity,
@@ -32,8 +33,14 @@ def build_dynamic_routes(
     user_profile,
     possible_score,
     match_percent,
+    intent=None,
     limit=3,
 ):
+    candidate_route_ids = {
+        route.get("route_id")
+        for route in seed_routes or []
+        if route.get("route_id")
+    }
     scored_spots = _score_spots(
         data.get("spots") or [],
         selected_tags,
@@ -42,6 +49,8 @@ def build_dynamic_routes(
         text_mindsets,
         user_text,
         user_profile,
+        intent or {},
+        candidate_route_ids,
     )
     scored_by_id = {item["spot"]["spot_id"]: item for item in scored_spots}
     optimized_routes = []
@@ -108,7 +117,17 @@ def _optimize_seed_route(seed_route, scored_spots, scored_by_id, possible_score,
     return dynamic_route
 
 
-def _score_spots(spots, selected_tags, selected_mindsets, text_tags, text_mindsets, user_text, user_profile):
+def _score_spots(
+    spots,
+    selected_tags,
+    selected_mindsets,
+    text_tags,
+    text_mindsets,
+    user_text,
+    user_profile,
+    intent=None,
+    candidate_route_ids=None,
+):
     scored = []
     tokens = _input_tokens(user_text)
 
@@ -155,6 +174,13 @@ def _score_spots(spots, selected_tags, selected_mindsets, text_tags, text_mindse
             profile_similarity = cosine_similarity(user_profile["vector"], spot_vector)
             if profile_similarity:
                 score += profile_similarity * PROFILE_SPOT_SCORE
+
+        score += score_spot_for_intent(
+            spot=spot,
+            selected_tags=list(selected_tags or []) + list(selected_mindsets or []),
+            intent=intent or {},
+            candidate_route_ids=candidate_route_ids or set(),
+        )
 
         scored.append(
             {

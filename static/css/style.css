@@ -650,7 +650,7 @@ textarea:focus,
   font-weight: 800;
 }
 
-.script-source-badge.is-fallback {
+.script-source-badge.is-missing {
   background: rgba(180, 83, 9, 0.12);
   color: #7c3f08;
 }
